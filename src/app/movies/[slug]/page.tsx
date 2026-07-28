@@ -34,7 +34,8 @@ async function getRelatedMovies(genres: string[], excludeId: string) {
     .overlaps('genres', genres)
     .limit(12);
 
-  return movies || [];
+  if (!movies) return [];
+  return movies.filter((m: any) => !m.free_servers?.is_tv);
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {

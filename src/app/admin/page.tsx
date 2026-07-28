@@ -18,6 +18,19 @@ interface StreamServer {
   label?: string;           // Optional legacy label
 }
 
+interface TVEpisode {
+  episode_number: number;
+  title: string;
+  description?: string;
+  servers: StreamServer[];
+}
+
+interface TVSeason {
+  season_number: number;
+  name: string;
+  episodes: TVEpisode[];
+}
+
 interface Movie {
   id: string;
   title: string;
@@ -26,7 +39,7 @@ interface Movie {
   is_published: boolean;
   server1_url: string | null;
   server2_url: string | null;
-  free_servers: StreamServer[] | null;
+  free_servers: any;
   vip_servers: StreamServer[] | null;
   poster_url: string | null;
   description: string | null;
@@ -62,7 +75,7 @@ interface UserProfile {
   purchases: Purchase[];
 }
 
-type Tab = 'movies' | 'payments' | 'users' | 'add';
+type Tab = 'movies' | 'tv_series' | 'payments' | 'users' | 'add';
 
 export default function AdminPage() {
   const { user, isAdmin, canMaintain, isLoading } = useAuth();
@@ -74,6 +87,8 @@ export default function AdminPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // Movie editing state
   const [editingMovie, setEditingMovie] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<{
     free_servers: StreamServer[];
@@ -81,31 +96,34 @@ export default function AdminPage() {
     runtime: string;
     description: string;
   }>({ free_servers: [], vip_servers: [], runtime: '', description: '' });
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
-  // Delete confirmation
+  // TV Series Editing state
+  const [editingTVSeries, setEditingTVSeries] = useState<string | null>(null);
+  const [tvEditForm, setTvEditForm] = useState<{
+    title: string;
+    description: string;
+    status: 'Completed' | 'Ongoing';
+    seasons: TVSeason[];
+  }>({ title: '', description: '', status: 'Completed', seasons: [] });
+  const [selectedSeasonIdx, setSelectedSeasonIdx] = useState(0);
+  const [selectedEpisodeIdx, setSelectedEpisodeIdx] = useState(0);
+
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
-  // Add movie form
+  // Add media form
   const [tmdbSearch, setTmdbSearch] = useState('');
   const [tmdbResults, setTmdbResults] = useState<any[]>([]);
   const [selectedTmdb, setSelectedTmdb] = useState<any>(null);
   const [publishing, setPublishing] = useState(false);
 
-  // Movie search in admin movies tab
+  // Searches
   const [movieSearch, setMovieSearch] = useState('');
-  const filteredMovies = movies.filter((m) =>
-    m.title.toLowerCase().includes(movieSearch.toLowerCase()) ||
-    m.slug.toLowerCase().includes(movieSearch.toLowerCase())
-  );
+  const [tvSearch, setTvSearch] = useState('');
+  const [userSearch, setUserSearch] = useState('');
 
   // Users tab
   const [usersLoading, setUsersLoading] = useState(false);
-  const [expandedUser, setExpandedUser] = useState<string | null>(null);
-  const [userSearch, setUserSearch] = useState('');
-
-  // Payment proof viewer state
-  const [viewingProof, setViewingProof] = useState<{ id: string; url: string; email: string; method: string; isPdf: boolean } | null>(null);
 
   useEffect(() => {
     if (!isLoading && (!user || !canMaintain)) {
@@ -168,6 +186,25 @@ export default function AdminPage() {
     fetchUsers();
   }, [tab, users.length, user, canMaintain, isLoading]);
 
+  // Derived lists
+  const moviesList = movies.filter(m => !m.free_servers?.is_tv);
+  const tvSeriesList = movies.filter(m => m.free_servers?.is_tv);
+
+  const filteredMovies = moviesList.filter((m) =>
+    m.title.toLowerCase().includes(movieSearch.toLowerCase()) ||
+    m.slug.toLowerCase().includes(movieSearch.toLowerCase())
+  );
+
+  const filteredTVSeries = tvSeriesList.filter((s) =>
+    s.title.toLowerCase().includes(tvSearch.toLowerCase()) ||
+    s.slug.toLowerCase().includes(tvSearch.toLowerCase())
+  );
+
+  const filteredUsers = users.filter(u =>
+    (u.email || '').toLowerCase().includes(userSearch.toLowerCase()) ||
+    (u.full_name || '').toLowerCase().includes(userSearch.toLowerCase())
+  );
+
   // Search TMDB
   const handleTmdbSearch = async () => {
     if (!tmdbSearch.trim()) return;
@@ -180,42 +217,75 @@ export default function AdminPage() {
     }
   };
 
-  // Add movie
-  const handleAddMovie = async () => {
+  // Add Movie or TV Series
+  const handleAddMedia = async () => {
     if (!selectedTmdb) return;
     setPublishing(true);
 
-    try {
-      const slug = selectedTmdb.title
-        .toLowerCase()
-        .replace(/[^a-z0-9\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-')
-        + (selectedTmdb.release_date ? `-${selectedTmdb.release_date.split('-')[0]}` : '');
+    const isTV = selectedTmdb.media_type === 'tv' || selectedTmdb.name !== undefined;
+    const rawTitle = selectedTmdb.name || selectedTmdb.title;
+    const releaseDate = selectedTmdb.first_air_date || selectedTmdb.release_date;
+    const releaseYear = releaseDate ? parseInt(releaseDate.split('-')[0]) : null;
 
+    const slug = (isTV ? 'tv-' : '') + rawTitle
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      + (releaseYear ? `-${releaseYear}` : '');
+
+    const genres = (selectedTmdb.genre_ids || []).map((id: number) => {
+      const genreMap: Record<number, string> = {
+        28: 'Action', 12: 'Adventure', 16: 'Animation', 35: 'Comedy',
+        80: 'Crime', 99: 'Documentary', 18: 'Drama', 10751: 'Family',
+        14: 'Fantasy', 36: 'History', 27: 'Horror', 10402: 'Music',
+        9648: 'Mystery', 10749: 'Romance', 878: 'Sci-Fi', 10770: 'TV Movie',
+        53: 'Thriller', 10752: 'War', 37: 'Western', 10759: 'Action & Adventure', 10762: 'Kids', 10765: 'Sci-Fi & Fantasy'
+      };
+      return genreMap[id] || '';
+    }).filter(Boolean);
+
+    let freeServersPayload: any = [];
+
+    if (isTV) {
+      const defaultEpisodes: TVEpisode[] = Array.from({ length: 10 }, (_, i) => ({
+        episode_number: i + 1,
+        title: `Episode ${i + 1}`,
+        servers: [
+          { name: 'SERVER 1', input_type: 'url', url: `https://vidsrc.me/embed/tv/${selectedTmdb.id}/1/${i + 1}`, enabled: true },
+          { name: 'SERVER 2', input_type: 'url', url: `https://embed.su/embed/tv/${selectedTmdb.id}/1/${i + 1}`, enabled: true },
+          { name: 'SERVER 3', input_type: 'url', url: `https://2embed.org/embed/tv/${selectedTmdb.id}/1/${i + 1}`, enabled: true },
+          { name: 'SERVER 4', input_type: 'url', url: `https://autoembed.co/tv/tmdb/${selectedTmdb.id}-1-${i + 1}`, enabled: true },
+          { name: 'SERVER 5', input_type: 'url', url: `https://multiembed.mov/directstream.php?video_id=${selectedTmdb.id}&s=1&e=${i + 1}`, enabled: true },
+          { name: 'SERVER 6', input_type: 'url', url: `https://vidlink.pro/tv/${selectedTmdb.id}/1/${i + 1}`, enabled: true },
+        ]
+      }));
+
+      freeServersPayload = {
+        is_tv: true,
+        media_type: 'tv',
+        status: 'Completed',
+        seasons: [
+          { season_number: 1, name: 'SEASON 1', episodes: defaultEpisodes }
+        ]
+      };
+    }
+
+    try {
       const res = await fetch('/api/admin/movies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tmdb_id: selectedTmdb.id,
-          title: selectedTmdb.title,
+          title: rawTitle,
           slug,
           description: selectedTmdb.overview,
           poster_url: selectedTmdb.poster_path ? `https://image.tmdb.org/t/p/w500${selectedTmdb.poster_path}` : null,
           backdrop_url: selectedTmdb.backdrop_path ? `https://image.tmdb.org/t/p/original${selectedTmdb.backdrop_path}` : null,
-          genres: (selectedTmdb.genre_ids || []).map((id: number) => {
-            const genreMap: Record<number, string> = {
-              28: 'Action', 12: 'Adventure', 16: 'Animation', 35: 'Comedy',
-              80: 'Crime', 99: 'Documentary', 18: 'Drama', 10751: 'Family',
-              14: 'Fantasy', 36: 'History', 27: 'Horror', 10402: 'Music',
-              9648: 'Mystery', 10749: 'Romance', 878: 'Sci-Fi', 10770: 'TV Movie',
-              53: 'Thriller', 10752: 'War', 37: 'Western',
-            };
-            return genreMap[id] || '';
-          }).filter(Boolean),
-          rating: selectedTmdb.vote_average || 0,
-          release_year: selectedTmdb.release_date ? parseInt(selectedTmdb.release_date.split('-')[0]) : null,
-          free_servers: [],
+          genres: genres.length > 0 ? genres : ['Action', 'Animation'],
+          rating: selectedTmdb.vote_average || 8.0,
+          release_year: releaseYear,
+          free_servers: freeServersPayload,
           vip_servers: [],
           is_published: true,
         }),
@@ -227,8 +297,8 @@ export default function AdminPage() {
         setSelectedTmdb(null);
         setTmdbSearch('');
         setTmdbResults([]);
-        setTab('movies');
-        showToast('Movie added successfully!', 'success');
+        setTab(isTV ? 'tv_series' : 'movies');
+        showToast(`${isTV ? 'TV Series' : 'Movie'} added successfully!`, 'success');
       } else {
         const { error } = await res.json();
         showToast(`Error: ${error}`, 'error');
@@ -259,9 +329,9 @@ export default function AdminPage() {
     }
   };
 
-  // Start editing movie
-  const startEdit = (movie: Movie) => {
-    setEditingMovie(movie.id);
+  // Start editing Movie Streams
+  const startEditMovie = (movie: Movie) => {
+    setEditingMovie(editingMovie === movie.id ? null : movie.id);
     
     const normalizeServer = (s: any, idx: number, defaultNamePrefix: string): StreamServer => {
       const isEmbed = s.input_type === 'embed' || (s.embed_code && !s.url);
@@ -277,7 +347,7 @@ export default function AdminPage() {
     };
 
     let freeServers: StreamServer[] = [];
-    if (movie.free_servers && movie.free_servers.length > 0) {
+    if (Array.isArray(movie.free_servers) && movie.free_servers.length > 0) {
       freeServers = movie.free_servers.map((s, i) => normalizeServer(s, i, 'Server'));
     } else {
       if (movie.server1_url) freeServers.push({ id: 's1', name: 'Server 1', input_type: 'url', url: movie.server1_url, enabled: true, order: 1 });
@@ -299,7 +369,6 @@ export default function AdminPage() {
     setDeleteConfirm(null);
   };
 
-  // Helper: update a server in a list
   const updateServer = (type: 'free' | 'vip', idx: number, field: keyof StreamServer, value: any) => {
     const key = type === 'free' ? 'free_servers' : 'vip_servers';
     const servers = [...editForm[key]];
@@ -336,13 +405,46 @@ export default function AdminPage() {
     const newIdx = direction === 'up' ? idx - 1 : idx + 1;
     if (newIdx < 0 || newIdx >= servers.length) return;
     [servers[idx], servers[newIdx]] = [servers[newIdx], servers[idx]];
-    // Update order numbers
     const reordered = servers.map((s, i) => ({ ...s, order: i + 1 }));
     setEditForm({ ...editForm, [key]: reordered });
   };
 
-  // Save movie edits
-  const saveEdit = async (movie: Movie) => {
+  // Start editing TV Series
+  const startEditTVSeries = (series: Movie) => {
+    setEditingTVSeries(series.id);
+    const tvPayload = series.free_servers || {};
+    const seasons: TVSeason[] = tvPayload.seasons || [
+      {
+        season_number: 1,
+        name: 'SEASON 1',
+        episodes: Array.from({ length: 10 }, (_, i) => ({
+          episode_number: i + 1,
+          title: `Episode ${i + 1}`,
+          servers: [
+            { name: 'SERVER 1', input_type: 'url', url: `https://vidsrc.me/embed/tv/${series.tmdb_id}/1/${i + 1}`, enabled: true },
+            { name: 'SERVER 2', input_type: 'url', url: `https://embed.su/embed/tv/${series.tmdb_id}/1/${i + 1}`, enabled: true },
+            { name: 'SERVER 3', input_type: 'url', url: `https://2embed.org/embed/tv/${series.tmdb_id}/1/${i + 1}`, enabled: true },
+            { name: 'SERVER 4', input_type: 'url', url: `https://autoembed.co/tv/tmdb/${series.tmdb_id}-1-${i + 1}`, enabled: true },
+            { name: 'SERVER 5', input_type: 'url', url: `https://multiembed.mov/directstream.php?video_id=${series.tmdb_id}&s=1&e=${i + 1}`, enabled: true },
+            { name: 'SERVER 6', input_type: 'url', url: `https://vidlink.pro/tv/${series.tmdb_id}/1/${i + 1}`, enabled: true },
+          ]
+        }))
+      }
+    ];
+
+    setTvEditForm({
+      title: series.title,
+      description: series.description || '',
+      status: tvPayload.status || 'Completed',
+      seasons,
+    });
+    setSelectedSeasonIdx(0);
+    setSelectedEpisodeIdx(0);
+    setSaveMessage(null);
+  };
+
+  // Save Movie Edits
+  const saveMovieEdit = async (movie: Movie) => {
     setActionLoading(movie.id);
     setSaveMessage(null);
     try {
@@ -350,53 +452,84 @@ export default function AdminPage() {
         .filter(s => (s.embed_code && s.embed_code.trim()) || (s.url && s.url.trim()))
         .map((s, i) => ({ ...s, order: i + 1 }));
 
-      const cleanVip = editForm.vip_servers
-        .filter(s => (s.embed_code && s.embed_code.trim()) || (s.url && s.url.trim()))
-        .map((s, i) => ({ ...s, order: i + 1 }));
-
-      const updates: Record<string, any> = {
-        id: movie.id,
-        free_servers: cleanFree,
-        vip_servers: cleanVip,
-        runtime: editForm.runtime ? parseInt(editForm.runtime) : null,
-        description: editForm.description || null,
-      };
-
       const res = await fetch('/api/admin/movies', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
+        body: JSON.stringify({
+          id: movie.id,
+          free_servers: cleanFree,
+          vip_servers: editForm.vip_servers,
+          runtime: editForm.runtime ? parseInt(editForm.runtime) : null,
+          description: editForm.description,
+        }),
       });
 
       if (res.ok) {
         const { movie: updated } = await res.json();
-        const finalMovie = { ...movie, ...updated };
-        setMovies((prev) => [finalMovie, ...prev.filter((m) => m.id !== movie.id)]);
-        setSaveMessage('Saved!');
-        setTimeout(() => {
-          setEditingMovie(null);
-          setSaveMessage(null);
-        }, 1500);
+        setMovies((prev) => prev.map((m) => (m.id === movie.id ? updated : m)));
+        setSaveMessage('Saved successfully!');
+        setTimeout(() => setSaveMessage(null), 3000);
+      } else {
+        const { error } = await res.json();
+        showToast(`Save failed: ${error}`, 'error');
       }
     } finally {
       setActionLoading(null);
     }
   };
 
-  // Delete movie
-  const handleDeleteMovie = async (movieId: string) => {
-    setActionLoading(movieId);
+  // Save TV Series Edits
+  const saveTVSeriesEdit = async (series: Movie) => {
+    setActionLoading(series.id);
+    setSaveMessage(null);
+    try {
+      const updatedFreeServers = {
+        is_tv: true,
+        media_type: 'tv',
+        status: tvEditForm.status,
+        seasons: tvEditForm.seasons,
+      };
+
+      const res = await fetch('/api/admin/movies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: series.id,
+          title: tvEditForm.title,
+          description: tvEditForm.description,
+          free_servers: updatedFreeServers,
+        }),
+      });
+
+      if (res.ok) {
+        const { movie: updated } = await res.json();
+        setMovies((prev) => prev.map((m) => (m.id === series.id ? updated : m)));
+        setEditingTVSeries(null);
+        showToast('TV Series updated successfully!', 'success');
+      } else {
+        const { error } = await res.json();
+        showToast(`Save failed: ${error}`, 'error');
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Delete Movie / TV Series
+  const handleDeleteItem = async (id: string) => {
+    setActionLoading(id);
     try {
       const res = await fetch('/api/admin/movies', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: movieId }),
+        body: JSON.stringify({ id }),
       });
       if (res.ok) {
-        setMovies((prev) => prev.filter((m) => m.id !== movieId));
+        setMovies((prev) => prev.filter((m) => m.id !== id));
         setEditingMovie(null);
+        setEditingTVSeries(null);
         setDeleteConfirm(null);
-        showToast('Movie deleted successfully', 'success');
+        showToast('Deleted successfully', 'success');
       } else {
         const { error } = await res.json();
         showToast(`Delete failed: ${error}`, 'error');
@@ -406,7 +539,7 @@ export default function AdminPage() {
     }
   };
 
-  // Verify payment
+  // Payment Verification
   const verifyPayment = async (purchaseId: string, status: 'verified' | 'rejected') => {
     setActionLoading(purchaseId);
     try {
@@ -424,7 +557,7 @@ export default function AdminPage() {
     }
   };
 
-  // Set user role (User, Editor / Moderator, Admin)
+  // User Roles & Access
   const setUserRole = async (userId: string, newRole: 'user' | 'editor' | 'moderator' | 'admin') => {
     setActionLoading(userId);
     try {
@@ -438,89 +571,27 @@ export default function AdminPage() {
           prev.map((u) => (u.id === userId ? { ...u, role: newRole, is_admin: newRole === 'admin' } : u))
         );
         showToast(`User role updated to ${newRole.toUpperCase()}`, 'success');
-      } else {
-        const { error } = await res.json();
-        showToast(`Error: ${error}`, 'error');
       }
     } finally {
       setActionLoading(null);
     }
   };
 
-  // Grant VIP Lifetime access to user
   const handleGrantAccess = async (userId: string) => {
     setActionLoading(`grant-${userId}`);
     try {
       const res = await fetch('/api/admin/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId,
-          type: 'full',
-        }),
+        body: JSON.stringify({ userId, type: 'full' }),
       });
       if (res.ok) {
         const { purchase } = await res.json();
         setUsers((prev) =>
-          prev.map((u) =>
-            u.id === userId ? { ...u, purchases: [purchase, ...u.purchases] } : u
-          )
+          prev.map((u) => u.id === userId ? { ...u, purchases: [purchase, ...u.purchases] } : u)
         );
         showToast('VIP Lifetime Access granted successfully!', 'success');
-      } else {
-        const { error } = await res.json();
-        showToast(`Error: ${error}`, 'error');
       }
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  // Revoke access
-  const handleRevokeAccess = async (userId: string, purchaseId: string) => {
-    setActionLoading(`revoke-${purchaseId}`);
-    try {
-      const res = await fetch('/api/admin/users', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ purchaseId }),
-      });
-      if (res.ok) {
-        setUsers((prev) =>
-          prev.map((u) =>
-            u.id === userId
-              ? { ...u, purchases: u.purchases.filter((p) => p.id !== purchaseId) }
-              : u
-          )
-        );
-        showToast('Access revoked', 'success');
-      }
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  // Delete user account
-  const handleDeleteUser = async (userId: string, userEmail?: string) => {
-    if (!confirm(`Are you sure you want to permanently delete user ${userEmail || userId}? This action cannot be undone.`)) {
-      return;
-    }
-    setActionLoading(`delete-user-${userId}`);
-    try {
-      const res = await fetch('/api/admin/users', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetUserId: userId }),
-      });
-      if (res.ok) {
-        setUsers((prev) => prev.filter((u) => u.id !== userId));
-        showToast('User account deleted successfully', 'success');
-      } else {
-        const { error } = await res.json();
-        showToast(`Delete failed: ${error}`, 'error');
-      }
-    } catch (err: any) {
-      showToast(`Error: ${err.message}`, 'error');
     } finally {
       setActionLoading(null);
     }
@@ -534,37 +605,25 @@ export default function AdminPage() {
     );
   }
 
-  // Filtered users for search
-  const filteredUsers = userSearch
-    ? users.filter(
-        (u) =>
-          u.email?.toLowerCase().includes(userSearch.toLowerCase()) ||
-          u.full_name?.toLowerCase().includes(userSearch.toLowerCase())
-      )
-    : users;
-
   return (
-    <div className="pt-24 pb-16 page-enter">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="pt-24 pb-16 min-h-screen bg-dark-950 text-white page-enter">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-2xl sm:text-3xl font-display font-bold text-white">Admin Panel</h1>
-          <p className="text-dark-400 text-sm mt-1">Manage movies, payments, users, and content</p>
+          <p className="text-dark-400 text-sm mt-1">Manage movies, TV series, payments, users, and streaming options</p>
         </div>
 
-        {/* Stats */}
+        {/* Quick Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-8">
           <div className="p-4 rounded-xl bg-dark-800/50 border border-white/5">
-            <p className="text-2xl font-bold text-white">{movies.length}</p>
+            <p className="text-2xl font-bold text-white">{moviesList.length}</p>
             <p className="text-xs text-dark-400 mt-1">Total Movies</p>
           </div>
           <div className="p-4 rounded-xl bg-dark-800/50 border border-white/5">
-            <p className="text-2xl font-bold text-green-400">{movies.filter(m => (m.free_servers && m.free_servers.length > 0) || (m.vip_servers && m.vip_servers.length > 0) || m.server1_url).length}</p>
-            <p className="text-xs text-dark-400 mt-1">With Videos</p>
-          </div>
-          <div className="p-4 rounded-xl bg-dark-800/50 border border-white/5">
-            <p className="text-2xl font-bold text-yellow-400">{movies.filter(m => (!m.free_servers || m.free_servers.length === 0) && (!m.vip_servers || m.vip_servers.length === 0) && !m.server1_url).length}</p>
-            <p className="text-xs text-dark-400 mt-1">No Video</p>
+            <p className="text-2xl font-bold text-[#00ff73]">{tvSeriesList.length}</p>
+            <p className="text-xs text-dark-400 mt-1">Total TV Series</p>
           </div>
           <div className="p-4 rounded-xl bg-dark-800/50 border border-white/5">
             <p className="text-2xl font-bold text-brand-400">{purchases.length}</p>
@@ -574,32 +633,36 @@ export default function AdminPage() {
             <p className="text-2xl font-bold text-purple-400">{users.length}</p>
             <p className="text-xs text-dark-400 mt-1">Users</p>
           </div>
+          <div className="p-4 rounded-xl bg-dark-800/50 border border-white/5">
+            <p className="text-2xl font-bold text-yellow-400">{movies.filter(m => m.is_published).length}</p>
+            <p className="text-xs text-dark-400 mt-1">Published Items</p>
+          </div>
         </div>
 
         {/* Tabs */}
         <div className="flex gap-1 p-1 rounded-xl bg-dark-800/50 border border-white/5 mb-8 w-fit flex-wrap">
-          {(['movies', 'payments', 'users', 'add'] as Tab[]).map((t) => (
+          {(['movies', 'tv_series', 'payments', 'users', 'add'] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className={`px-5 py-2.5 text-sm font-medium rounded-lg transition-all ${
                 tab === t
-                  ? 'bg-brand-600 text-white shadow-lg shadow-brand-500/25'
+                  ? 'bg-brand-600 text-white shadow-lg shadow-brand-500/25 font-bold'
                   : 'text-dark-400 hover:text-white hover:bg-white/5'
               }`}
             >
-              {t === 'movies' && `🎬 Movies (${movies.length})`}
+              {t === 'movies' && `🎬 Movies (${moviesList.length})`}
+              {t === 'tv_series' && `📺 TV Series (${tvSeriesList.length})`}
               {t === 'payments' && `💳 Payments (${purchases.length})`}
               {t === 'users' && `👥 Users${users.length > 0 ? ` (${users.length})` : ''}`}
-              {t === 'add' && '➕ Add Movie'}
+              {t === 'add' && '➕ Add Media'}
             </button>
           ))}
         </div>
 
-        {/* Movies Tab */}
+        {/* MOVIES TAB */}
         {tab === 'movies' && (
           <div className="space-y-4">
-            {/* Movie Search Bar */}
             <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 max-w-md mb-2">
               <svg className="w-4 h-4 text-dark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -611,380 +674,173 @@ export default function AdminPage() {
                 placeholder="Search movies by title..."
                 className="w-full bg-transparent text-white text-sm placeholder-dark-500 focus:outline-none"
               />
-              {movieSearch && (
-                <button onClick={() => setMovieSearch('')} className="text-dark-400 hover:text-white text-xs">
-                  ✕
-                </button>
-              )}
             </div>
 
-            {loading ? (
-              <div className="py-12 flex justify-center">
-                <LoadingSpinner text="Loading movies..." />
-              </div>
-            ) : movies.length === 0 ? (
+            {filteredMovies.length === 0 ? (
               <div className="text-center py-12">
-                <p className="text-dark-400 mb-4">No movies yet</p>
-                <button onClick={() => setTab('add')} className="px-5 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-medium hover:bg-brand-500 transition-colors">
+                <p className="text-dark-400 mb-4">No movies found</p>
+                <button onClick={() => setTab('add')} className="px-5 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-medium hover:bg-brand-500">
                   Add First Movie
                 </button>
               </div>
-            ) : filteredMovies.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-dark-400">No movies found matching &quot;{movieSearch}&quot;</p>
-              </div>
             ) : (
               filteredMovies.map((movie) => (
-                <div
-                  key={movie.id}
-                  className="rounded-xl bg-dark-800/50 border border-white/5 hover:border-white/10 transition-all overflow-hidden"
-                >
-                  {/* Movie Row */}
+                <div key={movie.id} className="rounded-xl bg-dark-800/50 border border-white/5 overflow-hidden">
                   <div className="flex items-center justify-between p-4">
                     <div className="flex items-center gap-4 min-w-0">
-                      <div className="flex-shrink-0 w-12 h-16 rounded-lg bg-dark-700 overflow-hidden">
-                        {movie.poster_url && (
-                          <img src={movie.poster_url} alt="" className="w-full h-full object-cover" />
-                        )}
+                      <div className="w-12 h-16 rounded-lg bg-dark-700 overflow-hidden flex-shrink-0">
+                        {movie.poster_url && <img src={movie.poster_url} alt="" className="w-full h-full object-cover" />}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-white truncate">{movie.title}</p>
-                        <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          <span className="text-xs text-dark-500">TMDB: {movie.tmdb_id}</span>
-                          {((movie.free_servers && movie.free_servers.length > 0) || (movie.vip_servers && movie.vip_servers.length > 0) || movie.server1_url) ? (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20">
-                              ✓ {((movie.free_servers?.length || 0) + (movie.vip_servers?.length || 0)) || 1} Server(s) Ready
-                            </span>
-                          ) : (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
-                              ⚠ No Video
-                            </span>
-                          )}
-                          {movie.release_year && <span className="text-xs text-dark-500">{movie.release_year}</span>}
-                          {movie.runtime && <span className="text-xs text-dark-500">{movie.runtime}m</span>}
-                        </div>
+                        <p className="text-sm font-semibold text-white truncate">{movie.title}</p>
+                        <p className="text-xs text-dark-400 mt-0.5">
+                          {movie.release_year} • ⭐ {movie.rating?.toFixed(1)}
+                        </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {/* Edit button */}
-                      <button
-                        onClick={() => editingMovie === movie.id ? setEditingMovie(null) : startEdit(movie)}
-                        className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-all ${
-                          editingMovie === movie.id
-                            ? 'bg-brand-500/20 text-brand-300 border border-brand-500/30'
-                            : 'bg-dark-700 text-dark-300 border border-white/5 hover:border-white/10 hover:text-white'
-                        }`}
-                      >
-                        {editingMovie === movie.id ? '✕ Close' : '✎ Edit'}
-                      </button>
-                      {/* Publish toggle */}
+                    <div className="flex items-center gap-2">
                       <button
                         onClick={() => togglePublish(movie)}
-                        disabled={actionLoading === movie.id}
-                        className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-all ${
-                          movie.is_published
-                            ? 'bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20'
-                            : 'bg-dark-700 text-dark-400 border border-white/5 hover:border-white/10'
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${
+                          movie.is_published ? 'bg-green-500/15 text-green-400 border border-green-500/30' : 'bg-red-500/15 text-red-400 border border-red-500/30'
                         }`}
                       >
-                        {actionLoading === movie.id ? '...' : movie.is_published ? '● Published' : '○ Draft'}
+                        {movie.is_published ? 'Published' : 'Hidden'}
+                      </button>
+                      <button
+                        onClick={() => startEditMovie(movie)}
+                        className="px-3 py-1.5 rounded-lg text-xs bg-white/5 hover:bg-white/10 text-white font-medium"
+                      >
+                        ✏️ Edit Streams
                       </button>
                     </div>
                   </div>
 
-                  {/* Edit Panel (expandable) */}
+                  {/* Movie Server Drawer */}
                   {editingMovie === movie.id && (
-                    <div className="border-t border-white/5 p-4 bg-dark-900/50 space-y-5">
-
-                      {/* FREE Streaming Servers */}
-                      <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-                        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                          <div>
-                            <h3 className="text-sm font-semibold text-emerald-300">🎬 FREE Streaming Servers</h3>
-                            <p className="text-[10px] text-emerald-500/70 mt-0.5">Admin-managed servers for free viewers (displayed as Server 1, Server 2, etc. on frontend)</p>
-                          </div>
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-[10px] text-emerald-400/60 font-medium">Quick Add:</span>
-                            {['VOE', 'Abyss', 'FileMoon', 'Vibuxser', 'Morencius', 'Doodstream'].map((provider) => (
-                              <button
-                                key={provider}
-                                onClick={() => addServer('free', provider)}
-                                className="px-2 py-1 text-[10px] rounded bg-emerald-500/10 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/20 transition-all font-medium"
-                              >
-                                + {provider}
-                              </button>
-                            ))}
+                    <div className="border-t border-white/5 p-6 bg-dark-900/50 space-y-6 animate-fade-in">
+                      {/* Free Servers */}
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <label className="text-xs font-bold text-green-400 uppercase tracking-wider">
+                            🎬 Free Servers (With Ads)
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-dark-400">Quick Add:</span>
+                            <button onClick={() => addServer('free', 'VOE')} className="px-2.5 py-1 text-xs rounded bg-white/5 hover:bg-white/10 text-dark-200">+ VOE</button>
+                            <button onClick={() => addServer('free', 'Abyss')} className="px-2.5 py-1 text-xs rounded bg-white/5 hover:bg-white/10 text-dark-200">+ Abyss</button>
+                            <button onClick={() => addServer('free', 'Doodstream')} className="px-2.5 py-1 text-xs rounded bg-white/5 hover:bg-white/10 text-dark-200">+ Doodstream</button>
                           </div>
                         </div>
 
-                        {editForm.free_servers.length === 0 && (
-                          <p className="text-xs text-dark-500 italic">No free servers yet. Click a provider button above to add one.</p>
-                        )}
                         <div className="space-y-3">
                           {editForm.free_servers.map((server, idx) => (
-                            <div key={server.id || idx} className="p-3 rounded-lg bg-dark-900/80 border border-white/10 space-y-2">
-                              <div className="flex items-center justify-between gap-2 flex-wrap">
-                                <div className="flex items-center gap-1.5">
-                                  {/* Order indicator & movement */}
-                                  <span className="text-xs font-mono text-dark-400 font-bold">#{idx + 1}</span>
-                                  <div className="flex gap-0.5">
-                                    <button onClick={() => moveServer('free', idx, 'up')} disabled={idx === 0} className="p-0.5 rounded text-dark-500 hover:text-white disabled:opacity-20 transition-all" title="Move up">
-                                      ▲
-                                    </button>
-                                    <button onClick={() => moveServer('free', idx, 'down')} disabled={idx === editForm.free_servers.length - 1} className="p-0.5 rounded text-dark-500 hover:text-white disabled:opacity-20 transition-all" title="Move down">
-                                      ▼
-                                    </button>
-                                  </div>
-
-                                  {/* Provider Name (Admin Only) */}
-                                  <div className="flex items-center gap-1">
-                                    <label className="text-[10px] text-dark-400 font-medium">Provider Name:</label>
-                                    <input
-                                      type="text"
-                                      value={server.name}
-                                      onChange={(e) => updateServer('free', idx, 'name', e.target.value)}
-                                      className="w-32 px-2 py-1 rounded text-xs bg-white/5 border border-white/10 text-white placeholder-dark-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 font-semibold"
-                                      placeholder="Provider (VOE, etc)"
-                                    />
-                                  </div>
-                                </div>
-
+                            <div key={server.id || idx} className="p-3.5 rounded-xl bg-dark-800/80 border border-white/5 space-y-2">
+                              <div className="flex items-center justify-between gap-3">
+                                <input
+                                  type="text"
+                                  value={server.name}
+                                  onChange={(e) => updateServer('free', idx, 'name', e.target.value)}
+                                  placeholder="Server Name (e.g. Server 1)"
+                                  className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs font-semibold"
+                                />
                                 <div className="flex items-center gap-2">
-                                  {/* Input Type Selector */}
                                   <select
                                     value={server.input_type}
-                                    onChange={(e) => updateServer('free', idx, 'input_type', e.target.value as 'embed' | 'url')}
-                                    className="px-2 py-1 rounded text-xs bg-dark-800 border border-white/10 text-white focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                                    onChange={(e) => updateServer('free', idx, 'input_type', e.target.value as any)}
+                                    className="px-2.5 py-1 rounded bg-dark-900 border border-white/10 text-white text-xs"
                                   >
-                                    <option value="embed">Embed Code</option>
                                     <option value="url">Direct URL</option>
+                                    <option value="embed">Embed HTML Code</option>
                                   </select>
-
-                                  {/* Enable/Disable Toggle */}
-                                  <button
-                                    onClick={() => updateServer('free', idx, 'enabled', !server.enabled)}
-                                    className={`px-2.5 py-1 rounded text-[10px] font-medium transition-all ${
-                                      server.enabled
-                                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                        : 'bg-dark-700 text-dark-500 border border-white/5'
-                                    }`}
-                                  >
-                                    {server.enabled ? '● Enabled' : '○ Disabled'}
-                                  </button>
-
-                                  {/* Delete */}
-                                  <button
-                                    onClick={() => removeServer('free', idx)}
-                                    className="p-1 rounded text-red-400/60 hover:text-red-400 hover:bg-red-500/10 transition-all"
-                                    title="Delete server"
-                                  >
-                                    🗑️
-                                  </button>
+                                  <button onClick={() => moveServer('free', idx, 'up')} disabled={idx === 0} className="px-2 py-1 bg-white/5 text-xs rounded disabled:opacity-30">▲</button>
+                                  <button onClick={() => moveServer('free', idx, 'down')} disabled={idx === editForm.free_servers.length - 1} className="px-2 py-1 bg-white/5 text-xs rounded disabled:opacity-30">▼</button>
+                                  <button onClick={() => removeServer('free', idx)} className="px-2 py-1 bg-red-500/10 text-red-400 text-xs rounded">✕</button>
                                 </div>
                               </div>
-
-                              {/* Input value textarea/input */}
-                              <div>
-                                {server.input_type === 'embed' ? (
-                                  <textarea
-                                    value={server.embed_code || ''}
-                                    onChange={(e) => updateServer('free', idx, 'embed_code', e.target.value)}
-                                    rows={2}
-                                    className="w-full px-2.5 py-1.5 rounded text-xs font-mono bg-white/5 border border-white/10 text-emerald-300 placeholder-dark-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 resize-none"
-                                    placeholder='Embed Code (e.g. <iframe src="https://voe.sx/e/..." ...></iframe>)'
-                                  />
-                                ) : (
-                                  <input
-                                    type="text"
-                                    value={server.url || ''}
-                                    onChange={(e) => updateServer('free', idx, 'url', e.target.value)}
-                                    className="w-full px-2.5 py-1.5 rounded text-xs font-mono bg-white/5 border border-white/10 text-white placeholder-dark-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
-                                    placeholder="Direct URL (e.g. https://playmogo.com/e/...)"
-                                  />
-                                )}
-                              </div>
+                              <input
+                                type="text"
+                                value={server.input_type === 'embed' ? (server.embed_code || '') : (server.url || '')}
+                                onChange={(e) => updateServer('free', idx, server.input_type === 'embed' ? 'embed_code' : 'url', e.target.value)}
+                                placeholder={server.input_type === 'embed' ? '<iframe src="..." ...></iframe>' : 'https://stream-url.com/embed/...'}
+                                className="w-full px-3 py-2 rounded-lg bg-dark-950 border border-white/10 text-white text-xs font-mono"
+                              />
                             </div>
                           ))}
                         </div>
                       </div>
 
-                      {/* VIP Streaming Servers */}
-                      <div className="rounded-xl border border-brand-500/20 bg-brand-500/5 p-4">
-                        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                          <div>
-                            <h3 className="text-sm font-semibold text-brand-300">⚡ VIP Streaming Servers</h3>
-                            <p className="text-[10px] text-brand-500/70 mt-0.5">Admin-managed servers for VIP subscribers (displayed as Server 1, Server 2, etc. on frontend)</p>
-                          </div>
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-[10px] text-brand-400/60 font-medium">Quick Add:</span>
-                            {['Internet Archive', 'Google Drive'].map((provider) => (
-                              <button
-                                key={provider}
-                                onClick={() => addServer('vip', provider)}
-                                className="px-2 py-1 text-[10px] rounded bg-brand-500/10 hover:bg-brand-500/25 text-brand-300 border border-brand-500/20 transition-all font-medium"
-                              >
-                                + {provider}
-                              </button>
-                            ))}
-                          </div>
+                      {/* VIP Servers */}
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <label className="text-xs font-bold text-brand-400 uppercase tracking-wider">
+                            👑 VIP Servers (Ad-Free)
+                          </label>
+                          <button onClick={() => addServer('vip', 'Google Drive')} className="px-2.5 py-1 text-xs rounded bg-brand-500/10 text-brand-300 border border-brand-500/20">
+                            + Google Drive
+                          </button>
                         </div>
 
-                        {editForm.vip_servers.length === 0 && (
-                          <p className="text-xs text-dark-500 italic">No VIP servers yet. Click a provider button above to add one.</p>
-                        )}
                         <div className="space-y-3">
                           {editForm.vip_servers.map((server, idx) => (
-                            <div key={server.id || idx} className="p-3 rounded-lg bg-dark-900/80 border border-white/10 space-y-2">
-                              <div className="flex items-center justify-between gap-2 flex-wrap">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-xs font-mono text-dark-400 font-bold">#{idx + 1}</span>
-                                  <div className="flex gap-0.5">
-                                    <button onClick={() => moveServer('vip', idx, 'up')} disabled={idx === 0} className="p-0.5 rounded text-dark-500 hover:text-white disabled:opacity-20 transition-all" title="Move up">
-                                      ▲
-                                    </button>
-                                    <button onClick={() => moveServer('vip', idx, 'down')} disabled={idx === editForm.vip_servers.length - 1} className="p-0.5 rounded text-dark-500 hover:text-white disabled:opacity-20 transition-all" title="Move down">
-                                      ▼
-                                    </button>
-                                  </div>
-
-                                  <div className="flex items-center gap-1">
-                                    <label className="text-[10px] text-dark-400 font-medium">Provider Name:</label>
-                                    <input
-                                      type="text"
-                                      value={server.name}
-                                      onChange={(e) => updateServer('vip', idx, 'name', e.target.value)}
-                                      className="w-32 px-2 py-1 rounded text-xs bg-white/5 border border-white/10 text-white placeholder-dark-500 focus:outline-none focus:ring-1 focus:ring-brand-500/50 font-semibold"
-                                      placeholder="Provider (Google Drive, etc)"
-                                    />
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-2">
-                                  <select
-                                    value={server.input_type}
-                                    onChange={(e) => updateServer('vip', idx, 'input_type', e.target.value as 'embed' | 'url')}
-                                    className="px-2 py-1 rounded text-xs bg-dark-800 border border-white/10 text-white focus:outline-none focus:ring-1 focus:ring-brand-500/50"
-                                  >
-                                    <option value="embed">Embed Code</option>
-                                    <option value="url">Direct URL</option>
-                                  </select>
-
-                                  <button
-                                    onClick={() => updateServer('vip', idx, 'enabled', !server.enabled)}
-                                    className={`px-2.5 py-1 rounded text-[10px] font-medium transition-all ${
-                                      server.enabled
-                                        ? 'bg-brand-500/20 text-brand-400 border border-brand-500/30'
-                                        : 'bg-dark-700 text-dark-500 border border-white/5'
-                                    }`}
-                                  >
-                                    {server.enabled ? '● Enabled' : '○ Disabled'}
-                                  </button>
-
-                                  <button
-                                    onClick={() => removeServer('vip', idx)}
-                                    className="p-1 rounded text-red-400/60 hover:text-red-400 hover:bg-red-500/10 transition-all"
-                                    title="Delete server"
-                                  >
-                                    🗑️
-                                  </button>
-                                </div>
+                            <div key={server.id || idx} className="p-3.5 rounded-xl bg-dark-800/80 border border-white/5 space-y-2">
+                              <div className="flex items-center justify-between gap-3">
+                                <input
+                                  type="text"
+                                  value={server.name}
+                                  onChange={(e) => updateServer('vip', idx, 'name', e.target.value)}
+                                  className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs font-semibold"
+                                />
+                                <button onClick={() => removeServer('vip', idx)} className="px-2 py-1 bg-red-500/10 text-red-400 text-xs rounded">✕</button>
                               </div>
-
-                              <div>
-                                {server.input_type === 'embed' ? (
-                                  <textarea
-                                    value={server.embed_code || ''}
-                                    onChange={(e) => updateServer('vip', idx, 'embed_code', e.target.value)}
-                                    rows={2}
-                                    className="w-full px-2.5 py-1.5 rounded text-xs font-mono bg-white/5 border border-white/10 text-brand-300 placeholder-dark-500 focus:outline-none focus:ring-1 focus:ring-brand-500/50 resize-none"
-                                    placeholder='Embed Code (e.g. <iframe src="https://archive.org/embed/..." ...></iframe>)'
-                                  />
-                                ) : (
-                                  <input
-                                    type="text"
-                                    value={server.url || ''}
-                                    onChange={(e) => updateServer('vip', idx, 'url', e.target.value)}
-                                    className="w-full px-2.5 py-1.5 rounded text-xs font-mono bg-white/5 border border-white/10 text-white placeholder-dark-500 focus:outline-none focus:ring-1 focus:ring-brand-500/50"
-                                    placeholder="Direct URL (e.g. https://drive.google.com/file/d/FILE_ID/view)"
-                                  />
-                                )}
-                              </div>
+                              <input
+                                type="text"
+                                value={server.url || ''}
+                                onChange={(e) => updateServer('vip', idx, 'url', e.target.value)}
+                                placeholder="Google Drive / Direct URL"
+                                className="w-full px-3 py-2 rounded-lg bg-dark-950 border border-white/10 text-white text-xs font-mono"
+                              />
                             </div>
                           ))}
                         </div>
                       </div>
 
-                      {/* Metadata */}
-                      <div>
-                        <label className="block text-xs font-medium text-dark-300 mb-1.5">⏱️ Runtime (minutes)</label>
-                        <input
-                          type="number"
-                          value={editForm.runtime}
-                          onChange={(e) => setEditForm({ ...editForm, runtime: e.target.value })}
-                          placeholder="e.g., 152"
-                          className="w-full max-w-xs px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
-                        />
+                      {/* Runtime & Description */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-medium text-dark-300 mb-1">Runtime (minutes)</label>
+                          <input
+                            type="number"
+                            value={editForm.runtime}
+                            onChange={(e) => setEditForm({ ...editForm, runtime: e.target.value })}
+                            className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-dark-300 mb-1">Description (Overview)</label>
+                          <textarea
+                            value={editForm.description}
+                            onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                            rows={3}
+                            className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm"
+                          />
+                        </div>
                       </div>
 
-                      <div>
-                        <label className="block text-xs font-medium text-dark-300 mb-1.5">📝 Description</label>
-                        <textarea
-                          value={editForm.description}
-                          onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                          rows={3}
-                          className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-white text-sm placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 resize-none"
-                        />
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex items-center justify-between pt-2">
+                      <div className="flex items-center justify-between pt-2 border-t border-white/5">
                         <div className="flex items-center gap-3">
                           <button
-                            onClick={() => saveEdit(movie)}
+                            onClick={() => saveMovieEdit(movie)}
                             disabled={actionLoading === movie.id}
-                            className="px-5 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-500 disabled:opacity-50 transition-all"
+                            className="px-5 py-2.5 rounded-xl bg-brand-600 text-white text-xs font-bold hover:bg-brand-500 disabled:opacity-50"
                           >
                             {actionLoading === movie.id ? 'Saving...' : '💾 Save Changes'}
                           </button>
-                          <button
-                            onClick={() => setEditingMovie(null)}
-                            className="px-5 py-2 rounded-lg bg-white/5 text-dark-300 text-sm font-medium hover:bg-white/10 transition-all"
-                          >
-                            Cancel
-                          </button>
-                          {saveMessage && (
-                            <span className="text-sm text-green-400 font-medium animate-fade-in">
-                              ✓ {saveMessage}
-                            </span>
-                          )}
+                          {saveMessage && <span className="text-xs text-green-400 font-bold">✓ {saveMessage}</span>}
                         </div>
-                        <div className="flex items-center gap-2">
-                          {deleteConfirm === movie.id ? (
-                            <>
-                              <span className="text-xs text-red-400">Are you sure?</span>
-                              <button
-                                onClick={() => handleDeleteMovie(movie.id)}
-                                disabled={actionLoading === movie.id}
-                                className="px-3 py-1.5 text-xs rounded-lg bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 font-medium transition-all disabled:opacity-50"
-                              >
-                                {actionLoading === movie.id ? 'Deleting...' : 'Yes, Delete'}
-                              </button>
-                              <button
-                                onClick={() => setDeleteConfirm(null)}
-                                className="px-3 py-1.5 text-xs rounded-lg bg-white/5 text-dark-400 hover:text-white transition-all"
-                              >
-                                No
-                              </button>
-                            </>
-                          ) : (
-                            <button
-                              onClick={() => setDeleteConfirm(movie.id)}
-                              className="px-3 py-1.5 text-xs rounded-lg text-red-400/60 border border-transparent hover:border-red-500/20 hover:bg-red-500/10 hover:text-red-400 font-medium transition-all"
-                            >
-                              🗑️ Delete
-                            </button>
-                          )}
-                        </div>
+                        <button onClick={() => handleDeleteItem(movie.id)} className="px-3 py-1.5 text-xs rounded-lg text-red-400 hover:bg-red-500/10">
+                          🗑️ Delete Movie
+                        </button>
                       </div>
                     </div>
                   )}
@@ -994,482 +850,434 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Payments Tab */}
+        {/* TV SERIES TAB */}
+        {tab === 'tv_series' && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 max-w-md mb-2">
+              <svg className="w-4 h-4 text-dark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                value={tvSearch}
+                onChange={(e) => setTvSearch(e.target.value)}
+                placeholder="Search TV series..."
+                className="w-full bg-transparent text-white text-sm placeholder-dark-500 focus:outline-none"
+              />
+            </div>
+
+            {filteredTVSeries.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-dark-400 mb-4">No TV series found</p>
+                <button onClick={() => setTab('add')} className="px-5 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-medium hover:bg-brand-500">
+                  Add First TV Series
+                </button>
+              </div>
+            ) : (
+              filteredTVSeries.map((series) => {
+                const tvData = series.free_servers || {};
+                const numSeasons = tvData.seasons?.length || 1;
+                const statusStr = tvData.status || 'Completed';
+
+                return (
+                  <div key={series.id} className="rounded-xl bg-dark-800/50 border border-white/5 overflow-hidden">
+                    <div className="flex items-center justify-between p-4 flex-wrap gap-4">
+                      <div className="flex items-center gap-4 min-w-0 flex-1">
+                        <div className="w-12 h-16 rounded-lg bg-dark-700 overflow-hidden flex-shrink-0">
+                          {series.poster_url && <img src={series.poster_url} alt="" className="w-full h-full object-cover" />}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-bold text-white truncate">{series.title}</p>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-[#00ff73]/15 text-[#00ff73] uppercase">
+                              {statusStr}
+                            </span>
+                          </div>
+                          <p className="text-xs text-dark-400 mt-1">
+                            {series.release_year} • ⭐ {series.rating?.toFixed(1)} • {numSeasons} Season{numSeasons > 1 ? 's' : ''}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => togglePublish(series)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${
+                            series.is_published ? 'bg-green-500/15 text-green-400 border border-green-500/30' : 'bg-red-500/15 text-red-400 border border-red-500/30'
+                          }`}
+                        >
+                          {series.is_published ? 'Published' : 'Hidden'}
+                        </button>
+                        <button
+                          onClick={() => startEditTVSeries(series)}
+                          className="px-4 py-1.5 rounded-lg text-xs bg-[#00ff73]/20 hover:bg-[#00ff73]/30 text-[#00ff73] font-bold border border-[#00ff73]/30"
+                        >
+                          ⚙️ Manage Seasons & Episodes
+                        </button>
+                        <button onClick={() => handleDeleteItem(series.id)} className="px-2.5 py-1.5 rounded-lg text-xs text-red-400/70 hover:text-red-400 hover:bg-red-500/10">
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+
+        {/* TV SERIES SEASON & EPISODE MODAL EDITOR */}
+        {editingTVSeries && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setEditingTVSeries(null)} />
+            <div className="relative w-full max-w-4xl max-h-[90vh] bg-dark-900 border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col z-10 animate-scale-in">
+              <div className="p-4 border-b border-white/10 flex items-center justify-between bg-dark-800/80">
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <span>📺 Edit TV Series:</span>
+                    <span className="text-[#00ff73]">{tvEditForm.title}</span>
+                  </h3>
+                  <p className="text-xs text-dark-400 mt-0.5">Manage Seasons, Episodes, Description, and Stream Servers (SERVER 1 to 6)</p>
+                </div>
+                <button onClick={() => setEditingTVSeries(null)} className="text-dark-400 hover:text-white p-2">✕</button>
+              </div>
+
+              <div className="p-6 overflow-y-auto space-y-6 flex-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-dark-300 uppercase mb-1">Series Title</label>
+                    <input
+                      type="text"
+                      value={tvEditForm.title}
+                      onChange={(e) => setTvEditForm({ ...tvEditForm, title: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-dark-300 uppercase mb-1">Series Status</label>
+                    <select
+                      value={tvEditForm.status}
+                      onChange={(e) => setTvEditForm({ ...tvEditForm, status: e.target.value as any })}
+                      className="w-full px-3 py-2 rounded-xl bg-dark-800 border border-white/10 text-white text-sm focus:outline-none cursor-pointer"
+                    >
+                      <option value="Completed">SERIES FINISHED (COMPLETED)</option>
+                      <option value="Ongoing">SERIES ONGOING</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-dark-300 uppercase mb-1">Description (Overview / Sinhala Synopsis)</label>
+                  <textarea
+                    value={tvEditForm.description}
+                    onChange={(e) => setTvEditForm({ ...tvEditForm, description: e.target.value })}
+                    rows={3}
+                    placeholder="Enter series synopsis or Sinhala dubbed description..."
+                    className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-[#00ff73]"
+                  />
+                </div>
+
+                {/* Seasons */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">SEASONS</label>
+                    <button
+                      onClick={() => {
+                        const newSeasonNum = tvEditForm.seasons.length + 1;
+                        const newSeason: TVSeason = {
+                          season_number: newSeasonNum,
+                          name: `SEASON ${newSeasonNum}`,
+                          episodes: Array.from({ length: 10 }, (_, i) => ({
+                            episode_number: i + 1,
+                            title: `Episode ${i + 1}`,
+                            servers: [
+                              { name: 'SERVER 1', input_type: 'url', url: '', enabled: true },
+                              { name: 'SERVER 2', input_type: 'url', url: '', enabled: true },
+                              { name: 'SERVER 3', input_type: 'url', url: '', enabled: true },
+                              { name: 'SERVER 4', input_type: 'url', url: '', enabled: true },
+                              { name: 'SERVER 5', input_type: 'url', url: '', enabled: true },
+                              { name: 'SERVER 6', input_type: 'url', url: '', enabled: true },
+                            ]
+                          }))
+                        };
+                        setTvEditForm({ ...tvEditForm, seasons: [...tvEditForm.seasons, newSeason] });
+                        setSelectedSeasonIdx(tvEditForm.seasons.length);
+                        setSelectedEpisodeIdx(0);
+                      }}
+                      className="text-xs text-[#00ff73] font-bold hover:underline"
+                    >
+                      + Add Season
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                    {tvEditForm.seasons.map((s, idx) => (
+                      <button
+                        key={s.season_number}
+                        onClick={() => { setSelectedSeasonIdx(idx); setSelectedEpisodeIdx(0); }}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all uppercase ${
+                          selectedSeasonIdx === idx
+                            ? 'bg-[#00ff73] text-black font-extrabold shadow-md shadow-[#00ff73]/20'
+                            : 'bg-white/5 text-white hover:bg-white/10 border border-white/10'
+                        }`}
+                      >
+                        {s.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Episodes */}
+                {tvEditForm.seasons[selectedSeasonIdx] && (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">EPISODES</label>
+                      <button
+                        onClick={() => {
+                          const seasons = [...tvEditForm.seasons];
+                          const currSeason = seasons[selectedSeasonIdx];
+                          const newEpNum = currSeason.episodes.length + 1;
+                          currSeason.episodes.push({
+                            episode_number: newEpNum,
+                            title: `Episode ${newEpNum}`,
+                            servers: [
+                              { name: 'SERVER 1', input_type: 'url', url: '', enabled: true },
+                              { name: 'SERVER 2', input_type: 'url', url: '', enabled: true },
+                              { name: 'SERVER 3', input_type: 'url', url: '', enabled: true },
+                              { name: 'SERVER 4', input_type: 'url', url: '', enabled: true },
+                              { name: 'SERVER 5', input_type: 'url', url: '', enabled: true },
+                              { name: 'SERVER 6', input_type: 'url', url: '', enabled: true },
+                            ]
+                          });
+                          setTvEditForm({ ...tvEditForm, seasons });
+                          setSelectedEpisodeIdx(currSeason.episodes.length - 1);
+                        }}
+                        className="text-xs text-[#00ff73] font-bold hover:underline"
+                      >
+                        + Add Episode
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full">
+                      {tvEditForm.seasons[selectedSeasonIdx].episodes.map((ep, idx) => (
+                        <button
+                          key={ep.episode_number}
+                          onClick={() => setSelectedEpisodeIdx(idx)}
+                          className={`px-3 py-2 rounded-xl text-xs font-bold transition-all uppercase ${
+                            selectedEpisodeIdx === idx
+                              ? 'bg-[#00ff73] text-black font-extrabold shadow-md'
+                              : 'bg-white/5 text-white hover:bg-white/10 border border-white/10'
+                          }`}
+                        >
+                          EP {ep.episode_number}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Episode Servers Editor */}
+                {tvEditForm.seasons[selectedSeasonIdx]?.episodes[selectedEpisodeIdx] && (
+                  <div className="bg-white/5 border border-white/10 p-4 rounded-2xl space-y-4">
+                    <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                      <h4 className="text-sm font-bold text-white">
+                        Servers for Season {tvEditForm.seasons[selectedSeasonIdx].season_number} — Episode {tvEditForm.seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx].episode_number}
+                      </h4>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {Array.from({ length: 6 }, (_, srvIdx) => {
+                        const ep = tvEditForm.seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx];
+                        const server = ep.servers[srvIdx] || { name: `SERVER ${srvIdx + 1}`, input_type: 'url', url: '', enabled: true };
+
+                        return (
+                          <div key={srvIdx} className="p-3 rounded-xl bg-dark-800/90 border border-white/10 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-extrabold text-[#00ff73] uppercase">SERVER {srvIdx + 1}</span>
+                              <div className="flex items-center gap-2">
+                                <label className="text-[10px] text-dark-400">Mode:</label>
+                                <select
+                                  value={server.input_type || 'url'}
+                                  onChange={(e) => {
+                                    const seasons = [...tvEditForm.seasons];
+                                    const servers = [...seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx].servers];
+                                    servers[srvIdx] = { ...servers[srvIdx], input_type: e.target.value as any };
+                                    seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx].servers = servers;
+                                    setTvEditForm({ ...tvEditForm, seasons });
+                                  }}
+                                  className="text-[11px] bg-dark-900 text-white rounded px-2 py-0.5 border border-white/10"
+                                >
+                                  <option value="url">Direct URL</option>
+                                  <option value="embed">Embed Code</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            <input
+                              type="text"
+                              value={server.input_type === 'embed' ? (server.embed_code || '') : (server.url || '')}
+                              onChange={(e) => {
+                                const seasons = [...tvEditForm.seasons];
+                                const servers = [...seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx].servers];
+                                if (server.input_type === 'embed') {
+                                  servers[srvIdx] = { ...servers[srvIdx], embed_code: e.target.value, name: `SERVER ${srvIdx + 1}` };
+                                } else {
+                                  servers[srvIdx] = { ...servers[srvIdx], url: e.target.value, name: `SERVER ${srvIdx + 1}` };
+                                }
+                                seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx].servers = servers;
+                                setTvEditForm({ ...tvEditForm, seasons });
+                              }}
+                              placeholder={server.input_type === 'embed' ? '<iframe src="..." ...></iframe>' : 'https://stream-url.com/embed/...'}
+                              className="w-full px-3 py-2 rounded-lg bg-dark-950 border border-white/10 text-white text-xs font-mono placeholder-dark-500 focus:outline-none focus:border-[#00ff73]"
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 border-t border-white/10 bg-dark-800/80 flex items-center justify-between">
+                <button
+                  onClick={() => setEditingTVSeries(null)}
+                  className="px-5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white text-sm font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    const targetSeries = movies.find(m => m.id === editingTVSeries);
+                    if (targetSeries) saveTVSeriesEdit(targetSeries);
+                  }}
+                  className="px-6 py-2.5 rounded-xl bg-[#00ff73] text-black font-bold text-sm shadow-lg shadow-[#00ff73]/20 hover:scale-105 transition-transform"
+                >
+                  💾 Save All Seasons & Episodes
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PAYMENTS TAB */}
         {tab === 'payments' && (
           <div className="space-y-4">
             {purchases.length === 0 ? (
               <div className="text-center py-12">
-                <div className="w-16 h-16 rounded-full bg-dark-800 flex items-center justify-center mx-auto mb-4">
-                  <span className="text-2xl">💳</span>
-                </div>
-                <p className="text-dark-400 mb-1">No pending payments</p>
-                <p className="text-dark-500 text-sm">New payments will appear here when users submit payment receipt proof</p>
+                <p className="text-dark-400">No pending payments</p>
               </div>
             ) : (
-              purchases.map((purchase) => {
-                const proofUrl = purchase.payment_proof_url || '';
-                const isPdf = proofUrl.includes('data:application/pdf') || proofUrl.toLowerCase().endsWith('.pdf');
-
-                return (
-                  <div
-                    key={purchase.id}
-                    className="p-4 rounded-xl bg-dark-800/50 border border-white/5 hover:border-white/10 transition-all"
-                  >
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <p className="text-sm font-semibold text-white truncate">
-                            {purchase.profiles?.email || 'Unknown User'}
-                          </p>
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-brand-500/20 text-brand-300 border border-brand-500/30">
-                            {purchase.type === 'full' ? '👑 VIP Lifetime' : `🎬 ${purchase.movies?.title || 'Single Movie'}`}
-                          </span>
-                        </div>
-                        <p className="text-xs text-dark-400">
-                          Amount: <span className="font-semibold text-white">{formatCurrency(purchase.amount)}</span> •
-                          {' '}Method: <span className="font-semibold text-brand-300">{purchase.payment_method}</span> •
-                          {' '}{timeAgo(purchase.created_at)}
-                        </p>
-
-                        {/* Slip Attachment Button */}
-                        {proofUrl && (
-                          <div className="mt-3 flex items-center gap-2 flex-wrap">
-                            <button
-                              onClick={() => setViewingProof({
-                                id: purchase.id,
-                                url: proofUrl,
-                                email: purchase.profiles?.email || 'User',
-                                method: purchase.payment_method,
-                                isPdf,
-                              })}
-                              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-brand-500/10 text-brand-300 border border-brand-500/25 hover:bg-brand-500/20 transition-all inline-flex items-center gap-1.5"
-                            >
-                              {isPdf ? '📄 View PDF Receipt Slip' : '🖼️ View Image Receipt Slip'}
-                            </button>
-
-                            <a
-                              href={proofUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 text-dark-300 border border-white/10 hover:bg-white/10 hover:text-white transition-all inline-flex items-center gap-1"
-                            >
-                              ↗ Open External
-                            </a>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex gap-2 flex-shrink-0 w-full sm:w-auto">
-                        <button
-                          onClick={() => verifyPayment(purchase.id, 'verified')}
-                          disabled={actionLoading === purchase.id}
-                          className="flex-1 sm:flex-initial px-4 py-2.5 text-xs font-semibold rounded-xl bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25 transition-all disabled:opacity-50 shadow-lg shadow-green-500/5"
-                        >
-                          {actionLoading === purchase.id ? 'Processing...' : '✓ Approve & Grant VIP'}
-                        </button>
-                        <button
-                          onClick={() => verifyPayment(purchase.id, 'rejected')}
-                          disabled={actionLoading === purchase.id}
-                          className="flex-1 sm:flex-initial px-4 py-2.5 text-xs font-semibold rounded-xl bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25 transition-all disabled:opacity-50"
-                        >
-                          ✗ Reject
-                        </button>
-                      </div>
-                    </div>
+              purchases.map((p) => (
+                <div key={p.id} className="p-4 rounded-xl bg-dark-800/50 border border-white/5 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-white">{p.profiles?.email}</p>
+                    <p className="text-xs text-dark-400">Amount: {formatCurrency(p.amount)} • Method: {p.payment_method}</p>
                   </div>
-                );
-              })
-            )}
-
-            {/* Proof Modal Viewer */}
-            {viewingProof && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setViewingProof(null)} />
-                <div className="relative w-full max-w-4xl max-h-[90vh] bg-dark-900 border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col z-10 animate-scale-in">
-                  {/* Modal Header */}
-                  <div className="p-4 border-b border-white/10 flex items-center justify-between bg-dark-800/80">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">{viewingProof.isPdf ? '📄' : '🖼️'}</span>
-                        <h3 className="text-base font-semibold text-white">
-                          Payment Slip — {viewingProof.email}
-                        </h3>
-                      </div>
-                      <p className="text-xs text-dark-400 mt-0.5">
-                        Method: {viewingProof.method} • Format: {viewingProof.isPdf ? 'PDF Document' : 'Image Receipt'}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => setViewingProof(null)}
-                      className="p-1 rounded-lg text-dark-400 hover:text-white hover:bg-white/5 transition-all"
-                    >
-                      ✕
-                    </button>
-                  </div>
-
-                  {/* Modal Body / Viewer */}
-                  <div className="flex-1 p-4 overflow-y-auto bg-black/50 flex justify-center items-center min-h-[400px]">
-                    {viewingProof.isPdf ? (
-                      <div className="w-full h-[60vh] flex flex-col items-center justify-center">
-                        <object
-                          data={viewingProof.url}
-                          type="application/pdf"
-                          className="w-full h-full rounded-xl border border-white/10 bg-dark-950"
-                        >
-                          <iframe src={viewingProof.url} className="w-full h-full rounded-xl border border-white/10" title="PDF Receipt Viewer" />
-                        </object>
-                      </div>
-                    ) : (
-                      <img
-                        src={viewingProof.url}
-                        alt="Payment Receipt Proof"
-                        className="max-h-[65vh] w-auto max-w-full object-contain rounded-xl border border-white/10 shadow-2xl"
-                      />
-                    )}
-                  </div>
-
-                  {/* Modal Footer Actions */}
-                  <div className="p-4 border-t border-white/10 bg-dark-800/80 flex items-center justify-between gap-3">
-                    <a
-                      href={viewingProof.url}
-                      download={`payment-slip-${viewingProof.id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-4 py-2 text-xs font-medium rounded-lg bg-white/5 text-dark-300 hover:bg-white/10 hover:text-white border border-white/10 transition-all"
-                    >
-                      📥 Download Original File
-                    </a>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={async () => {
-                          await verifyPayment(viewingProof.id, 'verified');
-                          setViewingProof(null);
-                        }}
-                        className="px-5 py-2 text-xs font-semibold rounded-xl bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 transition-all shadow-lg"
-                      >
-                        ✓ Approve &amp; Grant VIP Access
-                      </button>
-                      <button
-                        onClick={async () => {
-                          await verifyPayment(viewingProof.id, 'rejected');
-                          setViewingProof(null);
-                        }}
-                        className="px-4 py-2 text-xs font-semibold rounded-xl bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-all"
-                      >
-                        ✗ Reject
-                      </button>
-                    </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => verifyPayment(p.id, 'verified')} className="px-3 py-1.5 rounded-lg text-xs bg-green-500/20 text-green-400">Approve</button>
+                    <button onClick={() => verifyPayment(p.id, 'rejected')} className="px-3 py-1.5 rounded-lg text-xs bg-red-500/20 text-red-400">Reject</button>
                   </div>
                 </div>
-              </div>
+              ))
             )}
           </div>
         )}
 
-        {/* Users Tab */}
+        {/* USERS TAB */}
         {tab === 'users' && (
           <div className="space-y-4">
-            {/* Search */}
-            <div className="mb-4">
-              <input
-                type="text"
-                value={userSearch}
-                onChange={(e) => setUserSearch(e.target.value)}
-                placeholder="Search users by email or name..."
-                className="w-full max-w-md px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 text-sm"
-              />
-            </div>
-
-            {usersLoading ? (
-              <div className="py-12 flex justify-center">
-                <LoadingSpinner text="Loading users..." />
+            <input
+              type="text"
+              value={userSearch}
+              onChange={(e) => setUserSearch(e.target.value)}
+              placeholder="Search users..."
+              className="w-full max-w-md px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm"
+            />
+            {filteredUsers.map((u) => (
+              <div key={u.id} className="p-4 rounded-xl bg-dark-800/50 border border-white/5 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-white">{u.full_name || u.email}</p>
+                  <p className="text-xs text-dark-400">{u.email}</p>
+                </div>
+                <button onClick={() => handleGrantAccess(u.id)} className="px-3 py-1.5 rounded-lg text-xs bg-brand-600 text-white">Grant VIP</button>
               </div>
-            ) : filteredUsers.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-dark-400">{userSearch ? 'No users match your search' : 'No users found'}</p>
-              </div>
-            ) : (
-              filteredUsers.map((u) => {
-                const verifiedPurchases = u.purchases.filter((p) => p.status === 'verified');
-                const hasFullAccess = verifiedPurchases.some((p) => p.type === 'full');
-                const isExpanded = expandedUser === u.id;
-                const userRole = u.role || (u.is_admin ? 'admin' : 'user');
-
-                return (
-                  <div
-                    key={u.id}
-                    className="rounded-xl bg-dark-800/50 border border-white/5 hover:border-white/10 transition-all overflow-hidden"
-                  >
-                    {/* User Row */}
-                    <button
-                      onClick={() => setExpandedUser(isExpanded ? null : u.id)}
-                      className="w-full flex items-center justify-between p-4 text-left"
-                    >
-                      <div className="flex items-center gap-4 min-w-0">
-                        <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center text-white text-sm font-bold">
-                          {(u.full_name?.[0] || u.email?.[0] || 'U').toUpperCase()}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-white truncate">
-                            {u.full_name || 'No Name'}
-                          </p>
-                          <p className="text-xs text-dark-500 truncate">{u.email}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {userRole === 'admin' ? (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20 font-medium">
-                            👑 Admin
-                          </span>
-                        ) : userRole === 'editor' || userRole === 'moderator' ? (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-medium">
-                            🎬 Editor / Mod
-                          </span>
-                        ) : null}
-                        {hasFullAccess ? (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 font-medium">
-                            Full Access
-                          </span>
-                        ) : verifiedPurchases.length > 0 ? (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20 font-medium">
-                            {verifiedPurchases.length} movie{verifiedPurchases.length > 1 ? 's' : ''}
-                          </span>
-                        ) : (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-dark-700 text-dark-400 border border-white/5 font-medium">
-                            Free
-                          </span>
-                        )}
-                        <svg
-                          className={`w-4 h-4 text-dark-500 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </div>
-                    </button>
-
-                    {/* Expanded Panel */}
-                    {isExpanded && (
-                      <div className="border-t border-white/5 p-4 bg-dark-900/50 space-y-4">
-                        {/* User Info */}
-                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                          <div>
-                            <p className="text-[10px] text-dark-500 uppercase tracking-wider mb-1">User ID</p>
-                            <p className="text-xs text-dark-300 font-mono truncate">{u.id}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] text-dark-500 uppercase tracking-wider mb-1">Member Since</p>
-                            <p className="text-xs text-dark-300">{timeAgo(u.created_at)}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] text-dark-500 uppercase tracking-wider mb-1">Total Purchases</p>
-                            <p className="text-xs text-dark-300">{u.purchases.length}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] text-dark-500 uppercase tracking-wider mb-1">Access Role</p>
-                            <select
-                              value={userRole}
-                              onChange={(e) => setUserRole(u.id, e.target.value as any)}
-                              disabled={actionLoading === u.id || u.id === user?.id}
-                              className="px-2 py-1 rounded-md bg-dark-800 border border-white/10 text-white text-xs focus:outline-none focus:ring-1 focus:ring-brand-500 cursor-pointer"
-                            >
-                              <option value="user">👤 User</option>
-                              <option value="editor">🎬 Editor / Moderator</option>
-                              <option value="admin">👑 Admin</option>
-                            </select>
-                          </div>
-                          <div>
-                            <p className="text-[10px] text-dark-500 uppercase tracking-wider mb-1">Delete Account</p>
-                            <button
-                              onClick={() => handleDeleteUser(u.id, u.email)}
-                              disabled={actionLoading === `delete-user-${u.id}`}
-                              className="text-xs px-2 py-0.5 rounded-md bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-all disabled:opacity-50 flex items-center gap-1"
-                            >
-                              🗑️ {actionLoading === `delete-user-${u.id}` ? '...' : 'Delete'}
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Current Access */}
-                        <div>
-                          <p className="text-xs font-medium text-dark-300 mb-2">🎫 Access & Purchases</p>
-                          {u.purchases.length === 0 ? (
-                            <p className="text-xs text-dark-500">No purchases</p>
-                          ) : (
-                            <div className="space-y-1.5">
-                              {u.purchases.map((p) => (
-                                <div
-                                  key={p.id}
-                                  className="flex items-center justify-between p-2.5 rounded-lg bg-dark-800/70 border border-white/5"
-                                >
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <span className="text-sm">{p.type === 'full' ? '👑' : '🎬'}</span>
-                                    <div className="min-w-0">
-                                      <p className="text-xs text-white truncate">
-                                        {p.type === 'full' ? 'VIP Full Lifetime Access' : p.movies?.title || 'Single Movie'}
-                                      </p>
-                                      <p className="text-[10px] text-dark-500">
-                                        {p.payment_method === 'admin_grant' ? 'Admin granted' : `${p.payment_method}`} •{' '}
-                                        {timeAgo(p.created_at)}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-2 flex-shrink-0">
-                                    <span
-                                      className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${
-                                        p.status === 'verified'
-                                          ? 'bg-green-500/10 text-green-400 border-green-500/20'
-                                          : p.status === 'pending'
-                                          ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
-                                          : 'bg-red-500/10 text-red-400 border-red-500/20'
-                                      }`}
-                                    >
-                                      {p.status}
-                                    </span>
-                                    {p.status === 'verified' && (
-                                      <button
-                                        onClick={() => handleRevokeAccess(u.id, p.id)}
-                                        disabled={actionLoading === `revoke-${p.id}`}
-                                        className="text-[10px] px-1.5 py-0.5 rounded text-red-400/60 hover:text-red-400 hover:bg-red-500/10 transition-all disabled:opacity-50"
-                                      >
-                                        {actionLoading === `revoke-${p.id}` ? '...' : 'Revoke'}
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Grant VIP Access */}
-                        <div className="p-3.5 rounded-xl bg-brand-500/5 border border-brand-500/15 flex items-center justify-between gap-4 flex-wrap">
-                          <div>
-                            <p className="text-xs font-semibold text-brand-300">👑 VIP Lifetime Access (Rs. 100 Plan)</p>
-                            <p className="text-[11px] text-dark-400">Grant full lifetime VIP access to all movies & series</p>
-                          </div>
-                          <button
-                            onClick={() => handleGrantAccess(u.id)}
-                            disabled={hasFullAccess || actionLoading === `grant-${u.id}`}
-                            className={`px-4 py-2 rounded-lg text-xs font-medium transition-all shadow-md ${
-                              hasFullAccess
-                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 cursor-not-allowed opacity-80'
-                                : 'bg-gradient-to-r from-brand-600 to-brand-500 text-white hover:from-brand-500 hover:to-brand-400 disabled:opacity-50 shadow-brand-500/20'
-                            }`}
-                          >
-                            {actionLoading === `grant-${u.id}`
-                              ? 'Granting...'
-                              : hasFullAccess
-                              ? '✓ VIP Active'
-                              : 'Grant VIP Access'}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
+            ))}
           </div>
         )}
 
-        {/* Add Movie Tab */}
+        {/* ADD MEDIA TAB */}
         {tab === 'add' && (
           <div className="max-w-2xl">
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-              <h2 className="text-lg font-semibold text-white mb-1">Add New Movie</h2>
-              <p className="text-sm text-dark-400 mb-6">Search for a movie on TMDB to publish it, then add streaming servers via Edit</p>
+              <h2 className="text-lg font-semibold text-white mb-1">Add New Movie or TV Series</h2>
+              <p className="text-sm text-dark-400 mb-6">Search TMDB to add Movies or TV Series directly to DubLK</p>
 
-              {/* TMDB Search */}
               <div className="mb-6">
-                <label className="block text-sm text-dark-300 mb-2">Step 1: Search TMDB</label>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={tmdbSearch}
                     onChange={(e) => setTmdbSearch(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleTmdbSearch()}
-                    placeholder="Enter movie title..."
-                    className="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                    placeholder="Search movie or TV series title on TMDB..."
+                    className="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-dark-500 focus:outline-none"
                   />
-                  <button
-                    onClick={handleTmdbSearch}
-                    className="px-6 py-3 rounded-xl bg-brand-600 text-white font-medium hover:bg-brand-500 transition-colors"
-                  >
-                    Search
-                  </button>
+                  <button onClick={handleTmdbSearch} className="px-6 py-3 rounded-xl bg-brand-600 text-white font-medium hover:bg-brand-500">Search</button>
                 </div>
               </div>
 
-              {/* TMDB Results */}
               {tmdbResults.length > 0 && !selectedTmdb && (
                 <div className="mb-6 max-h-60 overflow-y-auto space-y-2 rounded-xl border border-white/10 p-2">
-                  {tmdbResults.map((result: any) => (
-                    <button
-                      key={result.id}
-                      onClick={() => setSelectedTmdb(result)}
-                      className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-white/5 text-left transition-all"
-                    >
-                      {result.poster_path && (
-                        <img
-                          src={`https://image.tmdb.org/t/p/w92${result.poster_path}`}
-                          alt=""
-                          className="w-10 h-14 rounded object-cover"
-                        />
-                      )}
-                      <div className="min-w-0">
-                        <p className="text-sm text-white truncate">{result.title}</p>
-                        <p className="text-xs text-dark-500">
-                          {result.release_date ? result.release_date.split('-')[0] : 'Unknown year'} •{' '}
-                          ⭐ {result.vote_average?.toFixed(1)}
-                        </p>
-                      </div>
-                    </button>
-                  ))}
+                  {tmdbResults.map((result: any) => {
+                    const isTV = result.media_type === 'tv' || result.name !== undefined;
+                    return (
+                      <button
+                        key={result.id}
+                        onClick={() => setSelectedTmdb(result)}
+                        className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-white/5 text-left"
+                      >
+                        {result.poster_path && (
+                          <img src={`https://image.tmdb.org/t/p/w92${result.poster_path}`} alt="" className="w-10 h-14 rounded object-cover" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-semibold text-white truncate">{result.name || result.title}</p>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${isTV ? 'bg-[#00ff73]/20 text-[#00ff73]' : 'bg-brand-500/20 text-brand-300'}`}>
+                              {isTV ? 'TV' : 'MOVIE'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-dark-500">⭐ {result.vote_average?.toFixed(1)}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
 
-              {/* Selected Movie */}
               {selectedTmdb && (
                 <div className="mb-6">
-                  <label className="block text-sm text-dark-300 mb-2">Step 2: Selected Movie</label>
                   <div className="flex items-center gap-4 p-4 rounded-xl bg-brand-500/10 border border-brand-500/20 mb-6">
                     {selectedTmdb.poster_path && (
-                      <img
-                        src={`https://image.tmdb.org/t/p/w92${selectedTmdb.poster_path}`}
-                        alt=""
-                        className="w-12 h-16 rounded object-cover"
-                      />
+                      <img src={`https://image.tmdb.org/t/p/w92${selectedTmdb.poster_path}`} alt="" className="w-12 h-16 rounded object-cover" />
                     )}
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-white">{selectedTmdb.title}</p>
-                      <p className="text-xs text-dark-400">
-                        {selectedTmdb.release_date?.split('-')[0]} • ⭐ {selectedTmdb.vote_average?.toFixed(1)}
-                      </p>
+                      <p className="text-sm font-medium text-white">{selectedTmdb.name || selectedTmdb.title}</p>
+                      <p className="text-xs text-dark-400">⭐ {selectedTmdb.vote_average?.toFixed(1)}</p>
                     </div>
-                    <button
-                      onClick={() => setSelectedTmdb(null)}
-                      className="ml-auto text-dark-400 hover:text-white"
-                    >
-                      ✕
-                    </button>
+                    <button onClick={() => setSelectedTmdb(null)} className="ml-auto text-dark-400 hover:text-white">✕</button>
                   </div>
 
                   <button
-                    onClick={handleAddMovie}
+                    onClick={handleAddMedia}
                     disabled={publishing}
-                    className="w-full py-3 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 text-white font-semibold hover:from-brand-500 hover:to-brand-400 transition-all disabled:opacity-50 shadow-lg shadow-brand-500/25"
+                    className="w-full py-3 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 text-white font-semibold shadow-lg shadow-brand-500/25"
                   >
-                    {publishing ? 'Adding...' : '🚀 Add & Publish Movie'}
+                    {publishing ? 'Adding...' : `🚀 Add & Publish ${selectedTmdb.media_type === 'tv' || selectedTmdb.name ? 'TV Series' : 'Movie'}`}
                   </button>
                 </div>
               )}
             </div>
           </div>
         )}
+
       </div>
     </div>
   );

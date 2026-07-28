@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
 
   const { data: movies, error } = await supabase
     .from('movies')
-    .select('id, slug, title, release_year, poster_url, genres, rating')
+    .select('id, slug, title, release_year, poster_url, genres, rating, free_servers')
     .eq('is_published', true)
     .ilike('title', `%${q}%`)
     .order('rating', { ascending: false })

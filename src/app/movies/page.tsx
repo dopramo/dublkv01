@@ -22,7 +22,10 @@ export default function CatalogPage() {
         .eq('is_published', true)
         .order('created_at', { ascending: false });
 
-      if (!error && data) setMovies(data);
+      if (!error && data) {
+        const moviesOnly = data.filter((item: any) => !item.free_servers?.is_tv);
+        setMovies(moviesOnly);
+      }
       setLoading(false);
     }
     fetchMovies();

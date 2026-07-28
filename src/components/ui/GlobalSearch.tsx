@@ -77,9 +77,10 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps) {
     search(debouncedQuery);
   }, [debouncedQuery, search]);
 
-  const handleSelect = (movie: DBMovie) => {
+  const handleSelect = (movie: any) => {
     onClose();
-    router.push(`/movies/${movie.slug}`);
+    const isTV = movie.free_servers?.is_tv;
+    router.push(isTV ? `/tv-series/${movie.slug}` : `/movies/${movie.slug}`);
   };
 
   if (!open) return null;

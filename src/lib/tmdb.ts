@@ -93,6 +93,25 @@ export async function getMovieCredits(tmdbId: number): Promise<TMDBCredits> {
   }
 }
 
+export async function getTVCredits(tmdbId: number): Promise<TMDBCredits> {
+  try {
+    const res = await fetch(`${TMDB_BASE_URL}/tv/${tmdbId}/credits?language=en-US`, {
+      headers: getHeaders(),
+      next: { revalidate: 86400 },
+    });
+    if (!res.ok) return { cast: [], crew: [] };
+    const data = await res.json();
+    return {
+      cast: (data.cast || []).slice(0, 20),
+      crew: (data.crew || []).filter((c: TMDBCrewMember) =>
+        ['Executive Producer', 'Producer', 'Creator', 'Writer', 'Director'].includes(c.job)
+      ).slice(0, 10),
+    };
+  } catch {
+    return { cast: [], crew: [] };
+  }
+}
+
 export function getPosterUrl(path: string | null, size: string = 'w500'): string {
   if (!path) return '/placeholder-poster.jpg';
   return `${TMDB_IMAGE_BASE}/${size}${path}`;
@@ -103,6 +122,53 @@ export function getBackdropUrl(path: string | null, size: string = 'original'): 
   return `${TMDB_IMAGE_BASE}/${size}${path}`;
 }
 
+export interface TMDBTVSeries {
+  id: number;
+  name: string;
+  overview: string;
+  poster_path: string | null;
+  backdrop_path: string | null;
+  first_air_date: string;
+  vote_average: number;
+  genre_ids?: number[];
+  genres?: { id: number; name: string }[];
+  number_of_seasons?: number;
+  number_of_episodes?: number;
+  status?: string;
+  seasons?: {
+    season_number: number;
+    episode_count: number;
+    name: string;
+  }[];
+}
+
+export async function searchTVSeries(query: string, year?: number): Promise<TMDBTVSeries[]> {
+  const params = new URLSearchParams({ query, include_adult: 'false', language: 'en-US', page: '1' });
+  if (year) params.set('first_air_date_year', year.toString());
+  
+  const res = await fetch(`${TMDB_BASE_URL}/search/tv?${params}`, { headers: getHeaders() });
+  if (!res.ok) throw new Error(`TMDB TV search failed: ${res.status}`);
+  
+  const data = await res.json();
+  return data.results || [];
+}
+
+export async function getTVSeriesDetails(tmdbId: number): Promise<TMDBTVSeries> {
+  const res = await fetch(`${TMDB_BASE_URL}/tv/${tmdbId}?language=en-US`, { headers: getHeaders() });
+  if (!res.ok) throw new Error(`TMDB TV details failed: ${res.status}`);
+  return res.json();
+}
+
+export async function getTVSeasonDetails(tmdbId: number, seasonNumber: number) {
+  try {
+    const res = await fetch(`${TMDB_BASE_URL}/tv/${tmdbId}/season/${seasonNumber}?language=en-US`, { headers: getHeaders() });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 export function getGenreNames(genreIds: number[]): string[] {
   return genreIds.map(id => GENRE_MAP[id]).filter(Boolean);
 }
@@ -110,3 +176,4 @@ export function getGenreNames(genreIds: number[]): string[] {
 export function getGenreNamesFromObjects(genres: { id: number; name: string }[]): string[] {
   return genres.map(g => g.name);
 }
+
