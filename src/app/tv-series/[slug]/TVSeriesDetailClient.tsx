@@ -89,19 +89,7 @@ export default function TVSeriesDetailClient({ series, relatedSeries, credits }:
 
   // If user clicked "Play", render full custom TV player UI
   if (watching) {
-    return (
-      <div>
-        <div className="pt-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto flex items-center justify-between">
-          <button
-            onClick={() => setWatching(false)}
-            className="px-4 py-2 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition-all flex items-center gap-2"
-          >
-            ← Back to Series Details
-          </button>
-        </div>
-        <WatchTVClient series={series} />
-      </div>
-    );
+    return <WatchTVClient series={series} />;
   }
 
   return (

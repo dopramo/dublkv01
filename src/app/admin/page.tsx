@@ -443,6 +443,66 @@ export default function AdminPage() {
     setSaveMessage(null);
   };
 
+  // TV Series Season & Episode Delete Handlers
+  const handleDeleteSeason = (seasonIdx: number) => {
+    if (tvEditForm.seasons.length <= 1) {
+      showToast('Cannot delete the only season.', 'error');
+      return;
+    }
+    const seasonName = tvEditForm.seasons[seasonIdx]?.name || `Season ${seasonIdx + 1}`;
+    if (!confirm(`Are you sure you want to delete ${seasonName} and all its episodes?`)) return;
+
+    const updatedSeasons = tvEditForm.seasons
+      .filter((_, i) => i !== seasonIdx)
+      .map((s, i) => ({
+        ...s,
+        season_number: i + 1,
+        name: `SEASON ${i + 1}`,
+      }));
+
+    setTvEditForm({ ...tvEditForm, seasons: updatedSeasons });
+    setSelectedSeasonIdx(Math.max(0, seasonIdx - 1));
+    setSelectedEpisodeIdx(0);
+    showToast(`${seasonName} deleted`, 'success');
+  };
+
+  const handleDeleteEpisode = (epIdx: number) => {
+    const currSeason = tvEditForm.seasons[selectedSeasonIdx];
+    if (!currSeason || currSeason.episodes.length <= 1) {
+      showToast('Cannot delete the only episode in a season.', 'error');
+      return;
+    }
+    const epNum = currSeason.episodes[epIdx]?.episode_number || epIdx + 1;
+    if (!confirm(`Are you sure you want to delete Episode ${epNum}?`)) return;
+
+    const updatedEpisodes = currSeason.episodes
+      .filter((_, i) => i !== epIdx)
+      .map((ep, i) => ({
+        ...ep,
+        episode_number: i + 1,
+        title: `Episode ${i + 1}`,
+      }));
+
+    const seasons = [...tvEditForm.seasons];
+    seasons[selectedSeasonIdx].episodes = updatedEpisodes;
+    setTvEditForm({ ...tvEditForm, seasons });
+    setSelectedEpisodeIdx(Math.max(0, epIdx - 1));
+    showToast(`Episode ${epNum} deleted`, 'success');
+  };
+
+  const handleClearServer = (srvIdx: number) => {
+    const seasons = [...tvEditForm.seasons];
+    const servers = [...seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx].servers];
+    servers[srvIdx] = {
+      ...servers[srvIdx],
+      url: '',
+      embed_code: '',
+    };
+    seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx].servers = servers;
+    setTvEditForm({ ...tvEditForm, seasons });
+    showToast(`SERVER ${srvIdx + 1} cleared`, 'success');
+  };
+
   // Save Movie Edits
   const saveMovieEdit = async (movie: Movie) => {
     setActionLoading(movie.id);
@@ -977,97 +1037,141 @@ export default function AdminPage() {
                   />
                 </div>
 
-                {/* Seasons */}
+                {/* Seasons Header */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">SEASONS</label>
-                    <button
-                      onClick={() => {
-                        const newSeasonNum = tvEditForm.seasons.length + 1;
-                        const newSeason: TVSeason = {
-                          season_number: newSeasonNum,
-                          name: `SEASON ${newSeasonNum}`,
-                          episodes: Array.from({ length: 10 }, (_, i) => ({
-                            episode_number: i + 1,
-                            title: `Episode ${i + 1}`,
-                            servers: [
-                              { name: 'SERVER 1', input_type: 'url', url: '', enabled: true },
-                              { name: 'SERVER 2', input_type: 'url', url: '', enabled: true },
-                              { name: 'SERVER 3', input_type: 'url', url: '', enabled: true },
-                              { name: 'SERVER 4', input_type: 'url', url: '', enabled: true },
-                              { name: 'SERVER 5', input_type: 'url', url: '', enabled: true },
-                              { name: 'SERVER 6', input_type: 'url', url: '', enabled: true },
-                            ]
-                          }))
-                        };
-                        setTvEditForm({ ...tvEditForm, seasons: [...tvEditForm.seasons, newSeason] });
-                        setSelectedSeasonIdx(tvEditForm.seasons.length);
-                        setSelectedEpisodeIdx(0);
-                      }}
-                      className="text-xs text-[#00ff73] font-bold hover:underline"
-                    >
-                      + Add Season
-                    </button>
+                    <div className="flex items-center gap-3">
+                      {tvEditForm.seasons.length > 1 && (
+                        <button
+                          onClick={() => handleDeleteSeason(selectedSeasonIdx)}
+                          className="text-xs text-red-400 font-bold hover:underline flex items-center gap-1"
+                        >
+                          🗑️ Delete Season {tvEditForm.seasons[selectedSeasonIdx]?.season_number}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          const newSeasonNum = tvEditForm.seasons.length + 1;
+                          const newSeason: TVSeason = {
+                            season_number: newSeasonNum,
+                            name: `SEASON ${newSeasonNum}`,
+                            episodes: Array.from({ length: 10 }, (_, i) => ({
+                              episode_number: i + 1,
+                              title: `Episode ${i + 1}`,
+                              servers: [
+                                { name: 'SERVER 1', input_type: 'url', url: '', enabled: true },
+                                { name: 'SERVER 2', input_type: 'url', url: '', enabled: true },
+                                { name: 'SERVER 3', input_type: 'url', url: '', enabled: true },
+                                { name: 'SERVER 4', input_type: 'url', url: '', enabled: true },
+                                { name: 'SERVER 5', input_type: 'url', url: '', enabled: true },
+                                { name: 'SERVER 6', input_type: 'url', url: '', enabled: true },
+                              ]
+                            }))
+                          };
+                          setTvEditForm({ ...tvEditForm, seasons: [...tvEditForm.seasons, newSeason] });
+                          setSelectedSeasonIdx(tvEditForm.seasons.length);
+                          setSelectedEpisodeIdx(0);
+                        }}
+                        className="text-xs text-[#00ff73] font-bold hover:underline"
+                      >
+                        + Add Season
+                      </button>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2 overflow-x-auto pb-1">
                     {tvEditForm.seasons.map((s, idx) => (
                       <button
                         key={s.season_number}
                         onClick={() => { setSelectedSeasonIdx(idx); setSelectedEpisodeIdx(0); }}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all uppercase ${
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all uppercase flex items-center gap-2 ${
                           selectedSeasonIdx === idx
                             ? 'bg-[#00ff73] text-black font-extrabold shadow-md shadow-[#00ff73]/20'
                             : 'bg-white/5 text-white hover:bg-white/10 border border-white/10'
                         }`}
                       >
-                        {s.name}
+                        <span>{s.name}</span>
+                        {tvEditForm.seasons.length > 1 && (
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteSeason(idx);
+                            }}
+                            className="hover:text-red-500 font-black text-xs opacity-60 hover:opacity-100 px-1"
+                            title="Delete season"
+                          >
+                            ✕
+                          </span>
+                        )}
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {/* Episodes */}
+                {/* Episodes Header */}
                 {tvEditForm.seasons[selectedSeasonIdx] && (
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">EPISODES</label>
-                      <button
-                        onClick={() => {
-                          const seasons = [...tvEditForm.seasons];
-                          const currSeason = seasons[selectedSeasonIdx];
-                          const newEpNum = currSeason.episodes.length + 1;
-                          currSeason.episodes.push({
-                            episode_number: newEpNum,
-                            title: `Episode ${newEpNum}`,
-                            servers: [
-                              { name: 'SERVER 1', input_type: 'url', url: '', enabled: true },
-                              { name: 'SERVER 2', input_type: 'url', url: '', enabled: true },
-                              { name: 'SERVER 3', input_type: 'url', url: '', enabled: true },
-                              { name: 'SERVER 4', input_type: 'url', url: '', enabled: true },
-                              { name: 'SERVER 5', input_type: 'url', url: '', enabled: true },
-                              { name: 'SERVER 6', input_type: 'url', url: '', enabled: true },
-                            ]
-                          });
-                          setTvEditForm({ ...tvEditForm, seasons });
-                          setSelectedEpisodeIdx(currSeason.episodes.length - 1);
-                        }}
-                        className="text-xs text-[#00ff73] font-bold hover:underline"
-                      >
-                        + Add Episode
-                      </button>
+                      <div className="flex items-center gap-3">
+                        {tvEditForm.seasons[selectedSeasonIdx].episodes.length > 1 && (
+                          <button
+                            onClick={() => handleDeleteEpisode(selectedEpisodeIdx)}
+                            className="text-xs text-red-400 font-bold hover:underline flex items-center gap-1"
+                          >
+                            🗑️ Delete EP {tvEditForm.seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx]?.episode_number}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            const seasons = [...tvEditForm.seasons];
+                            const currSeason = seasons[selectedSeasonIdx];
+                            const newEpNum = currSeason.episodes.length + 1;
+                            currSeason.episodes.push({
+                              episode_number: newEpNum,
+                              title: `Episode ${newEpNum}`,
+                              servers: [
+                                { name: 'SERVER 1', input_type: 'url', url: '', enabled: true },
+                                { name: 'SERVER 2', input_type: 'url', url: '', enabled: true },
+                                { name: 'SERVER 3', input_type: 'url', url: '', enabled: true },
+                                { name: 'SERVER 4', input_type: 'url', url: '', enabled: true },
+                                { name: 'SERVER 5', input_type: 'url', url: '', enabled: true },
+                                { name: 'SERVER 6', input_type: 'url', url: '', enabled: true },
+                              ]
+                            });
+                            setTvEditForm({ ...tvEditForm, seasons });
+                            setSelectedEpisodeIdx(currSeason.episodes.length - 1);
+                          }}
+                          className="text-xs text-[#00ff73] font-bold hover:underline"
+                        >
+                          + Add Episode
+                        </button>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full">
                       {tvEditForm.seasons[selectedSeasonIdx].episodes.map((ep, idx) => (
                         <button
                           key={ep.episode_number}
                           onClick={() => setSelectedEpisodeIdx(idx)}
-                          className={`px-3 py-2 rounded-xl text-xs font-bold transition-all uppercase ${
+                          className={`px-3 py-2 rounded-xl text-xs font-bold transition-all uppercase flex items-center gap-1.5 ${
                             selectedEpisodeIdx === idx
                               ? 'bg-[#00ff73] text-black font-extrabold shadow-md'
                               : 'bg-white/5 text-white hover:bg-white/10 border border-white/10'
                           }`}
                         >
-                          EP {ep.episode_number}
+                          <span>EP {ep.episode_number}</span>
+                          {tvEditForm.seasons[selectedSeasonIdx].episodes.length > 1 && (
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteEpisode(idx);
+                              }}
+                              className="hover:text-red-500 font-black text-xs opacity-60 hover:opacity-100 px-1"
+                              title="Delete episode"
+                            >
+                              ✕
+                            </span>
+                          )}
                         </button>
                       ))}
                     </div>
@@ -1087,6 +1191,7 @@ export default function AdminPage() {
                       {Array.from({ length: 6 }, (_, srvIdx) => {
                         const ep = tvEditForm.seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx];
                         const server = ep.servers[srvIdx] || { name: `SERVER ${srvIdx + 1}`, input_type: 'url', url: '', enabled: true };
+                        const hasValue = !!(server.url || server.embed_code);
 
                         return (
                           <div key={srvIdx} className="p-3 rounded-xl bg-dark-800/90 border border-white/10 space-y-2">
@@ -1108,6 +1213,15 @@ export default function AdminPage() {
                                   <option value="url">Direct URL</option>
                                   <option value="embed">Embed Code</option>
                                 </select>
+                                {hasValue && (
+                                  <button
+                                    onClick={() => handleClearServer(srvIdx)}
+                                    className="px-2 py-0.5 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 text-[10px] font-bold transition-colors"
+                                    title="Clear this server URL/embed"
+                                  >
+                                    ✕ Clear
+                                  </button>
+                                )}
                               </div>
                             </div>
 

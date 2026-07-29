@@ -143,16 +143,7 @@ export default function WatchClient({ movie, isFreeMode }: WatchClientProps) {
                 </span>
               </div>
 
-              {/* Overlay: Bottom Left Back / Exit Button [➜] */}
-              <button
-                onClick={() => router.push(`/movies/${movie.slug}`)}
-                className="absolute bottom-4 left-4 z-20 w-10 h-10 rounded-xl bg-white text-black flex items-center justify-center shadow-2xl hover:scale-105 active:scale-95 transition-transform duration-200"
-                title="Back to Movie Details"
-              >
-                <svg className="w-5 h-5 font-bold" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                </svg>
-              </button>
+
 
               {/* Player / Iframe */}
               {isPlaying && embedUrl ? (
