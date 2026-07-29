@@ -230,21 +230,8 @@ export default function WatchClient({ movie, isFreeMode }: WatchClientProps) {
 
           </div>
 
-          {/* RIGHT: Controls (Server Selector & Mode) */}
+          {/* RIGHT: Controls (Server Selector) */}
           <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-6">
-
-            {/* Mode Banner */}
-            <div className="p-4 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between">
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-0.5">STREAM MODE</span>
-                <span className="text-sm font-extrabold text-[#00ff73]">
-                  {isFreeMode ? 'FREE MODE (WITH ADS)' : 'VIP UNLOCKED (NO ADS)'}
-                </span>
-              </div>
-              <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${isFreeMode ? 'bg-emerald-500/20 text-emerald-300' : 'bg-fuchsia-500/20 text-fuchsia-300'}`}>
-                {isFreeMode ? 'FREE' : 'VIP'}
-              </span>
-            </div>
 
             {/* SERVER Selector */}
             <div>
@@ -268,26 +255,6 @@ export default function WatchClient({ movie, isFreeMode }: WatchClientProps) {
                   );
                 })}
               </div>
-            </div>
-
-            {/* Info Cards */}
-            <div className="p-4 rounded-xl bg-dark-900 border border-white/5 space-y-2">
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-400">Release Year:</span>
-                <span className="text-white font-semibold">{movie.release_year || 'N/A'}</span>
-              </div>
-              {movie.runtime && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-400">Runtime:</span>
-                  <span className="text-white font-semibold">{Math.floor(movie.runtime / 60)}h {movie.runtime % 60}m</span>
-                </div>
-              )}
-              {movie.rating > 0 && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-400">TMDB Rating:</span>
-                  <span className="text-yellow-400 font-semibold">⭐ {movie.rating.toFixed(1)}</span>
-                </div>
-              )}
             </div>
 
           </div>
