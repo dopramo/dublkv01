@@ -3,7 +3,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { createClient } from '@/lib/supabase/client';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import PricingModal from '@/components/payment/PricingModal';
 
 interface StreamServer {
   url?: string;
@@ -63,13 +65,57 @@ function getEmbedUrl(server: StreamServer | null): string {
 }
 
 export default function WatchClient({ movie, isFreeMode }: WatchClientProps) {
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, openAuthModal, isLoading: authLoading } = useAuth();
   const router = useRouter();
 
   const [activeServerIdx, setActiveServerIdx] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [iframeLoaded, setIframeLoaded] = useState(false);
+  const [showPricing, setShowPricing] = useState(false);
+  const [hasVipAccess, setHasVipAccess] = useState(false);
   const playerContainerRef = useRef<HTMLDivElement>(null);
+
+  // Check VIP access for current user
+  useEffect(() => {
+    async function checkAccess() {
+      if (!user) {
+        setHasVipAccess(false);
+        return;
+      }
+      try {
+        const supabase = createClient();
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('is_admin')
+          .eq('id', user.id)
+          .single();
+
+        if (profile?.is_admin) {
+          setHasVipAccess(true);
+          return;
+        }
+
+        const { data: purchases } = await supabase
+          .from('purchases')
+          .select('type, movie_id, status')
+          .eq('user_id', user.id)
+          .eq('status', 'verified');
+
+        if (purchases && purchases.length > 0) {
+          const hasFull = purchases.some((p: any) => p.type === 'full');
+          const hasSingle = purchases.some((p: any) => p.type === 'single' && p.movie_id === movie.id);
+          if (hasFull || hasSingle) {
+            setHasVipAccess(true);
+            return;
+          }
+        }
+        setHasVipAccess(false);
+      } catch {
+        setHasVipAccess(false);
+      }
+    }
+    checkAccess();
+  }, [user, movie.id]);
 
   // Available servers for current mode
   const availableServers: StreamServer[] = (() => {
@@ -122,6 +168,14 @@ export default function WatchClient({ movie, isFreeMode }: WatchClientProps) {
     setIframeLoaded(false);
   };
 
+  const handleUpgradeVip = () => {
+    if (!user) {
+      openAuthModal(() => {});
+      return;
+    }
+    setShowPricing(true);
+  };
+
   return (
     <div className="pt-20 sm:pt-24 pb-20 min-h-screen bg-dark-950 text-white page-enter">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
@@ -142,8 +196,6 @@ export default function WatchClient({ movie, isFreeMode }: WatchClientProps) {
                   {movieCodeLabel}
                 </span>
               </div>
-
-
 
               {/* Player / Iframe */}
               {isPlaying && embedUrl ? (
@@ -242,7 +294,7 @@ export default function WatchClient({ movie, isFreeMode }: WatchClientProps) {
 
         </div>
 
-        {/* BOTTOM: MOVIE STATUS CARD matching TV Series player */}
+        {/* BOTTOM: MOVIE STATUS CARD */}
         <div className="w-full bg-dark-900/90 border border-white/10 rounded-2xl p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
           <div>
             <span className="text-xs font-extrabold text-[#00ff73] tracking-widest uppercase block mb-1">
@@ -260,7 +312,50 @@ export default function WatchClient({ movie, isFreeMode }: WatchClientProps) {
           </div>
         </div>
 
+        {/* Notice Card for Free Stream Users */}
+        {isFreeMode && (
+          <div className="w-full rounded-2xl bg-dark-900 border border-white/10 p-5 sm:p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-5 animate-fade-in">
+            <div className="space-y-2 flex-1">
+              <div className="flex items-center gap-2 text-red-500 font-extrabold text-base sm:text-lg">
+                <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                <span>විශේෂ දැනුම්දීමයි</span>
+              </div>
+              <p className="text-xs sm:text-sm text-dark-300 leading-relaxed font-sans">
+                මෙම වෙබ් අඩවිය නොමිලේ පවත්වාගෙන යාම සඳහා වන අධික පිරිවැය ආවරණය කරගැනීමට කුඩා වෙළඳ දැන්වීම් කිහිපයක් ඇතුළත් කර ඇත. කරුණාකර ඒවා Skip කර නැවත මෙම පිටුවට පැමිණෙන්න. කිසිදු දැන්වීම් බාධාවකින් තොරව සුපිරි අත්දැකීමක් ලබා ගැනීමට Sign Up වී VIP Upgrade කරගන්න. සිදුවන අපහසුතාවයට අපගේ කණගාටුව!
+              </p>
+            </div>
+
+            {hasVipAccess ? (
+              <button
+                onClick={() => router.push(`/watch/${movie.slug}?mode=vip`)}
+                className="flex-shrink-0 px-6 py-3.5 rounded-xl font-bold text-white text-xs sm:text-sm bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 shadow-lg shadow-emerald-500/25 transition-all duration-200 hover:scale-105 active:scale-95 flex items-center gap-2 whitespace-nowrap"
+              >
+                <span className="text-base">👑</span>
+                <span>You are a VIP Member — Switch to VIP Mode</span>
+              </button>
+            ) : (
+              <button
+                onClick={handleUpgradeVip}
+                className="flex-shrink-0 px-6 py-3.5 rounded-xl font-bold text-white text-xs sm:text-sm bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 shadow-lg shadow-fuchsia-500/25 transition-all duration-200 hover:scale-105 active:scale-95 flex items-center gap-2 whitespace-nowrap"
+              >
+                <span className="text-base">👑</span>
+                <span>Upgrade to VIP</span>
+              </button>
+            )}
+          </div>
+        )}
+
       </div>
+
+      <PricingModal
+        isOpen={showPricing}
+        onClose={() => setShowPricing(false)}
+        movieId={movie.id}
+        movieTitle={movie.title}
+        movieSlug={movie.slug}
+      />
     </div>
   );
 }
