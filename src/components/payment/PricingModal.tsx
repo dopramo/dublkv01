@@ -17,46 +17,41 @@ interface PricingModalProps {
 const PAYMENT_METHODS = [
   {
     id: 'bank_transfer',
-    name: 'Bank Transfer / Deposit',
+    name: 'Bank Transfer / QR Pay',
     icon: '🏦',
+    subtext: 'Rs. 350.00 • Slip Required',
+    qrImage: '/qrpay.jpeg',
     details: [
-      { label: 'Bank Name', value: 'Commercial Bank / Sampath Bank' },
-      { label: 'Account Name', value: 'DubLK Streaming' },
-      { label: 'Account Number', value: '8009123456 / 1009123456' },
-      { label: 'Branch', value: 'Colombo Main' },
-      { label: 'Amount to Pay', value: 'Rs. 100.00' },
+      { label: 'Bank Name', value: 'Dialog Finance PLC' },
+      { label: 'Account Name', value: 'R M V R R G RATHNAYAKA' },
+      { label: 'Account Number', value: '0010 2320 5120' },
+      { label: 'Amount to Pay', value: 'Rs. 350.00' },
     ],
-    instructions: 'Deposit or transfer Rs. 100 to our bank account. Keep your printed or digital receipt slip (Image or PDF).',
+    instructions: 'Scan the QR code or deposit/transfer Rs. 350 to the Dialog Finance account above. Keep your printed or digital receipt slip (Image or PDF).',
   },
   {
-    id: 'ezcash',
-    name: 'eZ Cash / Reload',
-    icon: '📱',
+    id: 'binance_pay',
+    name: 'Binance Pay',
+    icon: '🔶',
+    subtext: '$1.00 USDT • Slip Required',
     details: [
-      { label: 'Mobile Number', value: '077 123 4567' },
-      { label: 'Amount', value: 'Rs. 100.00' },
+      { label: 'Binance Pay ID', value: '108852963 ( DUBLK )' },
+      { label: 'Account Name', value: 'DUBLK' },
+      { label: 'Amount to Pay', value: '$1.00 USDT' },
     ],
-    instructions: 'Send eZ Cash transfer of Rs. 100 to 077 123 4567. Take a screenshot of the confirmation SMS or receipt.',
+    instructions: 'Send $1.00 USDT via Binance Pay to Pay ID 108852963 (DUBLK). Upload a screenshot of the payment confirmation.',
   },
   {
-    id: 'onepay',
-    name: 'OnePay / Card',
-    icon: '💳',
-    details: [
-      { label: 'Merchant', value: 'DubLK Official' },
-      { label: 'Amount', value: 'Rs. 100.00' },
-    ],
-    instructions: 'Pay via OnePay online or card terminal and save your digital payment receipt image or PDF.',
-  },
-  {
-    id: 'helapay',
-    name: 'HelaPay / KOKO',
+    id: 'bybit_pay',
+    name: 'ByBit Pay',
     icon: '⚡',
+    subtext: '$1.00 USDT • Slip Required',
     details: [
-      { label: 'Account ID', value: 'DubLK-VIP' },
-      { label: 'Amount', value: 'Rs. 100.00' },
+      { label: 'ByBit Pay ID', value: '254116167 ( DUBLK )' },
+      { label: 'Account Name', value: 'DUBLK' },
+      { label: 'Amount to Pay', value: '$1.00 USDT' },
     ],
-    instructions: 'Transfer Rs. 100 via HelaPay or KOKO app and export the receipt PDF or screenshot.',
+    instructions: 'Send $1.00 USDT via ByBit Pay to Pay ID 254116167 (DUBLK). Upload a screenshot of the payment confirmation.',
   },
 ];
 
@@ -212,7 +207,7 @@ export default function PricingModal({ isOpen, onClose, movieTitle, movieSlug }:
         user_id: user.id,
         movie_id: null,
         type: 'full',
-        amount: 100,
+        amount: 350,
         payment_method: selectedMethod,
         payment_proof_url: finalProofUrl,
         status: 'pending',
@@ -300,7 +295,7 @@ export default function PricingModal({ isOpen, onClose, movieTitle, movieSlug }:
                   </div>
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-dark-400">Amount:</span>
-                    <span className="font-semibold text-green-400">{formatCurrency(pendingPurchase.amount || 100)}</span>
+                    <span className="font-semibold text-green-400">{formatCurrency(pendingPurchase.amount || 350)}</span>
                   </div>
                   {pendingPurchase.created_at && (
                     <div className="flex justify-between items-center text-xs">
@@ -403,7 +398,7 @@ export default function PricingModal({ isOpen, onClose, movieTitle, movieSlug }:
                             <p className="text-xs text-dark-400">Watch instantly — no sign-up required</p>
                             <div className="flex flex-col gap-0.5 mt-1.5">
                               <p className="text-[11px] text-emerald-400 flex items-center gap-1">
-                                <span>✓</span> All movies — no payment ever
+                                <span>✓</span> All movies &amp; series — no payment ever
                               </p>
                               <p className="text-[11px] text-emerald-400 flex items-center gap-1">
                                 <span>✓</span> No sign-up needed
@@ -420,13 +415,13 @@ export default function PricingModal({ isOpen, onClose, movieTitle, movieSlug }:
                         </div>
                       </button>
 
-                      {/* VIP — Rs.100 Lifetime */}
+                      {/* VIP — Rs.350 / $1 Lifetime */}
                       <button
                         onClick={() => handleSelectPlan('full')}
                         className="w-full p-5 rounded-xl border border-brand-500/30 bg-brand-500/5 hover:border-brand-500/60 hover:bg-brand-500/10 text-left transition-all duration-200 relative overflow-hidden"
                       >
                         <div className="absolute -top-px -right-px px-3 py-1 bg-gradient-to-r from-brand-600 to-amber-500 text-white text-[10px] font-bold rounded-bl-xl">
-                          👑 VIP
+                          👑 VIP LIFETIME
                         </div>
                         <div className="flex items-center justify-between">
                           <div>
@@ -434,13 +429,13 @@ export default function PricingModal({ isOpen, onClose, movieTitle, movieSlug }:
                               <span className="text-lg">⚡</span>
                               <h3 className="text-base font-semibold text-white">VIP — Lifetime Access</h3>
                             </div>
-                            <p className="text-xs text-dark-400">Pay Rs. 100 &amp; upload receipt slip (PDF or Image)</p>
+                            <p className="text-xs text-dark-400">Pay Rs. 350 or $1 USDT &amp; upload receipt slip</p>
                             <div className="flex flex-col gap-0.5 mt-1.5">
                               <p className="text-[11px] text-brand-300 flex items-center gap-1">
-                                <span>✓</span> Ad-free streaming on all servers
+                                <span>✓</span> Ad-free streaming on movies &amp; series
                               </p>
                               <p className="text-[11px] text-brand-300 flex items-center gap-1">
-                                <span>✓</span> New releases &amp; premium episodes
+                                <span>✓</span> Lifetime VIP access for all content
                               </p>
                               <p className="text-[11px] text-brand-300 flex items-center gap-1">
                                 <span>✓</span> Direct Admin review &amp; activation
@@ -448,8 +443,8 @@ export default function PricingModal({ isOpen, onClose, movieTitle, movieSlug }:
                             </div>
                           </div>
                           <div className="text-right ml-4 flex-shrink-0">
-                            <p className="text-3xl font-bold text-white">{formatCurrency(100)}</p>
-                            <p className="text-[10px] text-dark-500">one-time</p>
+                            <p className="text-2xl sm:text-3xl font-bold text-white">Rs. 350 / $1</p>
+                            <p className="text-[10px] text-dark-500">lifetime one-time</p>
                           </div>
                         </div>
                       </button>
@@ -462,9 +457,9 @@ export default function PricingModal({ isOpen, onClose, movieTitle, movieSlug }:
                   <div className="animate-fade-in">
                     <h2 className="text-xl font-display font-bold text-white mb-1">Payment Method</h2>
                     <p className="text-sm text-dark-400 mb-1">
-                      VIP Lifetime Access — <span className="text-brand-400 font-semibold">{formatCurrency(100)}</span>
+                      VIP Lifetime Access — <span className="text-brand-400 font-semibold">Rs. 350 / $1</span>
                     </p>
-                    <p className="text-xs text-dark-500 mb-6">Select where you want to deposit or transfer Rs. 100</p>
+                    <p className="text-xs text-dark-500 mb-6">Select where you want to deposit or transfer payment</p>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {PAYMENT_METHODS.map((method) => (
@@ -476,7 +471,7 @@ export default function PricingModal({ isOpen, onClose, movieTitle, movieSlug }:
                           <span className="text-2xl">{method.icon}</span>
                           <div>
                             <span className="text-sm font-medium text-white block">{method.name}</span>
-                            <span className="text-[10px] text-dark-400">Rs. 100 • Slip Required</span>
+                            <span className="text-[10px] text-dark-400">{method.subtext}</span>
                           </div>
                         </button>
                       ))}
@@ -489,16 +484,23 @@ export default function PricingModal({ isOpen, onClose, movieTitle, movieSlug }:
                   <div className="animate-fade-in">
                     <h2 className="text-xl font-display font-bold text-white mb-1">Upload Payment Slip</h2>
                     <p className="text-xs text-dark-500 mb-4">
-                      VIP Lifetime Access — {formatCurrency(100)} via {selectedMethodInfo?.name}
+                      VIP Lifetime Access via {selectedMethodInfo?.name}
                     </p>
 
                     {/* Payment Account Details */}
                     {selectedMethodInfo && (
-                      <div className="p-4 rounded-xl bg-brand-500/10 border border-brand-500/20 mb-5 space-y-2">
+                      <div className="p-4 rounded-xl bg-brand-500/10 border border-brand-500/20 mb-5 space-y-3">
                         <div className="flex items-center gap-2">
                           <span className="text-xl">{selectedMethodInfo.icon}</span>
                           <p className="text-sm font-semibold text-brand-300">{selectedMethodInfo.name}</p>
                         </div>
+
+                        {selectedMethodInfo.qrImage && (
+                          <div className="flex flex-col items-center justify-center p-3 bg-white rounded-xl my-2 border border-brand-500/20 shadow-md">
+                            <img src={selectedMethodInfo.qrImage} alt="QR Pay" className="w-52 h-auto rounded-lg object-contain" />
+                            <span className="text-xs font-bold text-gray-900 mt-2">Scan QR Code to Pay (Dialog Finance / LankaQR)</span>
+                          </div>
+                        )}
 
                         <div className="grid grid-cols-2 gap-2 py-2 border-y border-white/5">
                           {selectedMethodInfo.details.map((d, idx) => (
