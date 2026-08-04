@@ -123,9 +123,23 @@ export default function AdminPage() {
   const [movieSearch, setMovieSearch] = useState('');
   const [tvSearch, setTvSearch] = useState('');
   const [userSearch, setUserSearch] = useState('');
+  const [paymentSearch, setPaymentSearch] = useState('');
 
-  // Users tab
+  // Users & Payments Tab state
   const [usersLoading, setUsersLoading] = useState(false);
+  const [paymentSubTab, setPaymentSubTab] = useState<'pending' | 'verified' | 'rejected' | 'all'>('pending');
+  const [selectedUserSlips, setSelectedUserSlips] = useState<{ user: any; slips: any[] } | null>(null);
+  const [viewingSlip, setViewingSlip] = useState<{
+    id?: string;
+    url: string;
+    email?: string;
+    name?: string;
+    method?: string;
+    amount?: number;
+    status?: string;
+    date?: string;
+    type?: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!isLoading && (!user || !canMaintain)) {
@@ -146,7 +160,7 @@ export default function AdminPage() {
       try {
         const [moviesRes, paymentsRes] = await Promise.all([
           fetch('/api/admin/movies'),
-          fetch('/api/payments/verify?status=pending'),
+          fetch('/api/payments/verify?status=all'),
         ]);
 
         if (moviesRes.ok) {
@@ -206,6 +220,170 @@ export default function AdminPage() {
     (u.email || '').toLowerCase().includes(userSearch.toLowerCase()) ||
     (u.full_name || '').toLowerCase().includes(userSearch.toLowerCase())
   );
+
+  const pendingPurchases = purchases.filter(p => p.status === 'pending');
+  const verifiedPurchases = purchases.filter(p => p.status === 'verified');
+  const rejectedPurchases = purchases.filter(p => p.status === 'rejected');
+
+  const filteredPurchases = purchases.filter((p) => {
+    const matchesTab =
+      paymentSubTab === 'all' ||
+      (paymentSubTab === 'pending' && p.status === 'pending') ||
+      (paymentSubTab === 'verified' && p.status === 'verified') ||
+      (paymentSubTab === 'rejected' && p.status === 'rejected');
+
+    const email = (p.profiles?.email || p.user_id || '').toLowerCase();
+    const name = (p.profiles?.full_name || '').toLowerCase();
+    const method = (p.payment_method || '').toLowerCase();
+    const search = paymentSearch.toLowerCase();
+
+    const matchesSearch = !search || email.includes(search) || name.includes(search) || method.includes(search);
+
+    return matchesTab && matchesSearch;
+  });
+
+  // Payment Verification
+  const verifyPayment = async (purchaseId: string, status: 'verified' | 'rejected' | 'pending') => {
+    setActionLoading(`verify-${purchaseId}`);
+    try {
+      const res = await fetch('/api/payments/verify', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ purchaseId, status }),
+      });
+      if (res.ok) {
+        const { purchase: updated } = await res.json();
+        setPurchases((prev) => prev.map((p) => (p.id === purchaseId ? { ...p, status } : p)));
+        setUsers((prev) =>
+          prev.map((u) => {
+            if (u.id === updated.user_id) {
+              const purchases = u.purchases || [];
+              const exists = purchases.some((p: any) => p.id === purchaseId);
+              const newPurchases = exists
+                ? purchases.map((p: any) => (p.id === purchaseId ? { ...p, status } : p))
+                : [updated, ...purchases];
+              return { ...u, purchases: newPurchases };
+            }
+            return u;
+          })
+        );
+        showToast(
+          `Payment ${status === 'verified' ? 'Approved (VIP Unlocked)' : status === 'rejected' ? 'Rejected' : 'Reset to Pending'}`,
+          'success'
+        );
+        if (viewingSlip && viewingSlip.id === purchaseId) {
+          setViewingSlip((prev) => (prev ? { ...prev, status } : null));
+        }
+      } else {
+        const { error } = await res.json();
+        showToast(`Verification failed: ${error}`, 'error');
+      }
+    } catch (err: any) {
+      showToast(`Error: ${err.message}`, 'error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // User Roles & Access
+  const setUserRole = async (userId: string, newRole: 'user' | 'editor' | 'moderator' | 'admin') => {
+    setActionLoading(`role-${userId}`);
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: userId, role: newRole, is_admin: newRole === 'admin' }),
+      });
+      if (res.ok) {
+        setUsers((prev) =>
+          prev.map((u) => (u.id === userId ? { ...u, role: newRole, is_admin: newRole === 'admin' } : u))
+        );
+        showToast(`User role updated to ${newRole.toUpperCase()}`, 'success');
+      } else {
+        const { error } = await res.json();
+        showToast(`Role update failed: ${error}`, 'error');
+      }
+    } catch (err: any) {
+      showToast(`Role update failed: ${err.message}`, 'error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleGrantAccess = async (userId: string, type: 'single' | 'full' = 'full') => {
+    setActionLoading(`grant-${userId}`);
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, type }),
+      });
+      if (res.ok) {
+        const { purchase } = await res.json();
+        setUsers((prev) =>
+          prev.map((u) => (u.id === userId ? { ...u, purchases: [purchase, ...(u.purchases || [])] } : u))
+        );
+        setPurchases((prev) => [purchase, ...prev]);
+        showToast(`VIP ${type === 'full' ? 'Lifetime' : '1 Month'} Access granted!`, 'success');
+      } else {
+        const { error } = await res.json();
+        showToast(`Grant VIP failed: ${error}`, 'error');
+      }
+    } catch (err: any) {
+      showToast(`Grant VIP error: ${err.message}`, 'error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRevokeAccess = async (userId: string, purchaseId: string) => {
+    setActionLoading(`revoke-${purchaseId}`);
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ purchaseId }),
+      });
+      if (res.ok) {
+        setUsers((prev) =>
+          prev.map((u) => (u.id === userId ? { ...u, purchases: (u.purchases || []).filter((p: any) => p.id !== purchaseId) } : u))
+        );
+        setPurchases((prev) => prev.filter((p) => p.id !== purchaseId));
+        showToast('VIP Access revoked successfully!', 'success');
+      } else {
+        const { error } = await res.json();
+        showToast(`Revoke failed: ${error}`, 'error');
+      }
+    } catch (err: any) {
+      showToast(`Revoke error: ${err.message}`, 'error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDeleteUserAccount = async (userId: string, userEmail: string) => {
+    if (!window.confirm(`Are you sure you want to permanently delete user "${userEmail}"? This action cannot be undone.`)) return;
+    setActionLoading(`delete-user-${userId}`);
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUserId: userId }),
+      });
+      if (res.ok) {
+        setUsers((prev) => prev.filter((u) => u.id !== userId));
+        setPurchases((prev) => prev.filter((p) => p.user_id !== userId));
+        showToast('User account deleted successfully', 'success');
+      } else {
+        const { error } = await res.json();
+        showToast(`Delete user failed: ${error}`, 'error');
+      }
+    } catch (err: any) {
+      showToast(`Delete error: ${err.message}`, 'error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   // Search TMDB
   const handleTmdbSearch = async () => {
@@ -534,14 +712,13 @@ export default function AdminPage() {
     const epNum = currSeason.episodes[epIdx]?.episode_number || epIdx + 1;
     if (!confirm(`Are you sure you want to delete Episode ${epNum}?`)) return;
 
-    const updatedEpisodes = currSeason.episodes
+      const updatedEpisodes = currSeason.episodes
       .filter((_, i) => i !== epIdx)
       .map((ep, i) => ({
         ...ep,
         episode_number: i + 1,
         title: `Episode ${i + 1}`,
       }));
-
     const seasons = [...tvEditForm.seasons];
     seasons[selectedSeasonIdx].episodes = updatedEpisodes;
     setTvEditForm({ ...tvEditForm, seasons });
@@ -567,26 +744,16 @@ export default function AdminPage() {
     }
   };
 
-  // Save Movie Edits
   const saveMovieEdit = async (movie: Movie) => {
     setActionLoading(movie.id);
-    setSaveMessage(null);
     try {
-      const cleanFree = editForm.free_servers
-        .filter(s => (s.embed_code && s.embed_code.trim()) || (s.url && s.url.trim()))
-        .map((s, i) => ({ ...s, order: i + 1 }));
-
-      const cleanVip = editForm.vip_servers
-        .filter(s => (s.embed_code && s.embed_code.trim()) || (s.url && s.url.trim()))
-        .map((s, i) => ({ ...s, order: i + 1 }));
-
       const res = await fetch('/api/admin/movies', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: movie.id,
-          free_servers: cleanFree,
-          vip_servers: cleanVip,
+          free_servers: editForm.free_servers,
+          vip_servers: editForm.vip_servers,
           runtime: editForm.runtime ? parseInt(editForm.runtime) : null,
           description: editForm.description,
         }),
@@ -595,23 +762,23 @@ export default function AdminPage() {
       if (res.ok) {
         const { movie: updated } = await res.json();
         setMovies((prev) => prev.map((m) => (m.id === movie.id ? updated : m)));
-        setSaveMessage('Saved successfully!');
-        setTimeout(() => setSaveMessage(null), 3000);
+        setEditingMovie(null);
+        showToast('Movie servers updated successfully!', 'success');
       } else {
         const { error } = await res.json();
         showToast(`Save failed: ${error}`, 'error');
       }
+    } catch (err: any) {
+      showToast(`Save failed: ${err.message}`, 'error');
     } finally {
       setActionLoading(null);
     }
   };
 
-  // Save TV Series Edits
   const saveTVSeriesEdit = async (series: Movie) => {
     setActionLoading(series.id);
-    setSaveMessage(null);
     try {
-      const updatedFreeServers = {
+      const freeServersObj = {
         is_tv: true,
         media_type: 'tv',
         status: tvEditForm.status,
@@ -625,7 +792,7 @@ export default function AdminPage() {
           id: series.id,
           title: tvEditForm.title,
           description: tvEditForm.description,
-          free_servers: updatedFreeServers,
+          free_servers: freeServersObj,
         }),
       });
 
@@ -638,13 +805,15 @@ export default function AdminPage() {
         const { error } = await res.json();
         showToast(`Save failed: ${error}`, 'error');
       }
+    } catch (err: any) {
+      showToast(`Save failed: ${err.message}`, 'error');
     } finally {
       setActionLoading(null);
     }
   };
 
-  // Delete Movie / TV Series
   const handleDeleteItem = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this title? This action cannot be undone.')) return;
     setActionLoading(id);
     try {
       const res = await fetch('/api/admin/movies', {
@@ -654,72 +823,13 @@ export default function AdminPage() {
       });
       if (res.ok) {
         setMovies((prev) => prev.filter((m) => m.id !== id));
-        setEditingMovie(null);
-        setEditingTVSeries(null);
-        setDeleteConfirm(null);
-        showToast('Deleted successfully', 'success');
+        showToast('Item deleted successfully', 'success');
       } else {
         const { error } = await res.json();
         showToast(`Delete failed: ${error}`, 'error');
       }
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  // Payment Verification
-  const verifyPayment = async (purchaseId: string, status: 'verified' | 'rejected') => {
-    setActionLoading(purchaseId);
-    try {
-      const res = await fetch('/api/payments/verify', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ purchaseId, status }),
-      });
-      if (res.ok) {
-        setPurchases((prev) => prev.filter((p) => p.id !== purchaseId));
-        showToast(`Payment ${status}`, 'success');
-      }
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  // User Roles & Access
-  const setUserRole = async (userId: string, newRole: 'user' | 'editor' | 'moderator' | 'admin') => {
-    setActionLoading(userId);
-    try {
-      const res = await fetch('/api/admin/users', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: userId, role: newRole, is_admin: newRole === 'admin' }),
-      });
-      if (res.ok) {
-        setUsers((prev) =>
-          prev.map((u) => (u.id === userId ? { ...u, role: newRole, is_admin: newRole === 'admin' } : u))
-        );
-        showToast(`User role updated to ${newRole.toUpperCase()}`, 'success');
-      }
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleGrantAccess = async (userId: string) => {
-    setActionLoading(`grant-${userId}`);
-    try {
-      const res = await fetch('/api/admin/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, type: 'full' }),
-      });
-      if (res.ok) {
-        const { purchase } = await res.json();
-        setUsers((prev) =>
-          prev.map((u) => u.id === userId ? { ...u, purchases: [purchase, ...u.purchases] } : u)
-        );
-        showToast('VIP Lifetime Access granted successfully!', 'success');
-      }
+    } catch (err: any) {
+      showToast(`Delete error: ${err.message}`, 'error');
     } finally {
       setActionLoading(null);
     }
@@ -1400,47 +1510,540 @@ export default function AdminPage() {
 
         {/* PAYMENTS TAB */}
         {tab === 'payments' && (
-          <div className="space-y-4">
-            {purchases.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-dark-400">No pending payments</p>
+          <div className="space-y-6 animate-fade-in">
+            {/* Filter Sub-Tabs & Search */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-dark-900/60 p-4 rounded-2xl border border-white/10">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+                <button
+                  onClick={() => setPaymentSubTab('pending')}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                    paymentSubTab === 'pending'
+                      ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
+                      : 'bg-white/5 text-dark-300 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <span>⏳ Pending Review</span>
+                  <span className="px-1.5 py-0.5 rounded-full bg-black/20 text-[10px]">{pendingPurchases.length}</span>
+                </button>
+                <button
+                  onClick={() => setPaymentSubTab('verified')}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                    paymentSubTab === 'verified'
+                      ? 'bg-emerald-500 text-black shadow-lg shadow-emerald-500/20'
+                      : 'bg-white/5 text-dark-300 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <span>📜 Payment History (Approved)</span>
+                  <span className="px-1.5 py-0.5 rounded-full bg-black/20 text-[10px]">{verifiedPurchases.length}</span>
+                </button>
+                <button
+                  onClick={() => setPaymentSubTab('rejected')}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                    paymentSubTab === 'rejected'
+                      ? 'bg-red-500 text-white shadow-lg shadow-red-500/20'
+                      : 'bg-white/5 text-dark-300 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <span>❌ Rejected</span>
+                  <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-[10px]">{rejectedPurchases.length}</span>
+                </button>
+                <button
+                  onClick={() => setPaymentSubTab('all')}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                    paymentSubTab === 'all'
+                      ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/20'
+                      : 'bg-white/5 text-dark-300 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <span>🌐 All Payments</span>
+                  <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-[10px]">{purchases.length}</span>
+                </button>
+              </div>
+
+              {/* Search Bar */}
+              <div className="relative min-w-[240px]">
+                <input
+                  type="text"
+                  value={paymentSearch}
+                  onChange={(e) => setPaymentSearch(e.target.value)}
+                  placeholder="Search by email or method..."
+                  className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs placeholder-dark-500 focus:outline-none focus:border-brand-500"
+                />
+              </div>
+            </div>
+
+            {/* Payment Items Grid / List */}
+            {filteredPurchases.length === 0 ? (
+              <div className="text-center py-16 rounded-2xl bg-dark-900/40 border border-white/5">
+                <p className="text-3xl mb-2">💳</p>
+                <p className="text-dark-300 text-sm font-medium">No payment records found</p>
+                <p className="text-dark-500 text-xs mt-1">Try switching tabs or adjusting your search query</p>
               </div>
             ) : (
-              purchases.map((p) => (
-                <div key={p.id} className="p-4 rounded-xl bg-dark-800/50 border border-white/5 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-white">{p.profiles?.email}</p>
-                    <p className="text-xs text-dark-400">Amount: {formatCurrency(p.amount)} • Method: {p.payment_method}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => verifyPayment(p.id, 'verified')} className="px-3 py-1.5 rounded-lg text-xs bg-green-500/20 text-green-400">Approve</button>
-                    <button onClick={() => verifyPayment(p.id, 'rejected')} className="px-3 py-1.5 rounded-lg text-xs bg-red-500/20 text-red-400">Reject</button>
-                  </div>
-                </div>
-              ))
+              <div className="grid grid-cols-1 gap-3">
+                {filteredPurchases.map((p) => {
+                  const methodLabel = p.payment_method === 'bank_transfer'
+                    ? '🏦 Bank / QR Pay'
+                    : p.payment_method === 'binance_pay'
+                      ? '🔶 Binance Pay'
+                      : p.payment_method === 'bybit_pay'
+                        ? '⚡ ByBit Pay'
+                        : p.payment_method === 'admin_grant'
+                          ? '👑 Admin Grant'
+                          : p.payment_method || 'Direct Transfer';
+
+                  const planLabel = p.type === 'full' ? '👑 Lifetime VIP' : '💜 1 Month VIP';
+
+                  return (
+                    <div
+                      key={p.id}
+                      className="p-4 sm:p-5 rounded-2xl bg-dark-900/80 border border-white/10 hover:border-white/20 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4"
+                    >
+                      <div className="flex items-start sm:items-center gap-4">
+                        {/* Slip Thumbnail or Icon */}
+                        {p.payment_proof_url ? (
+                          <div
+                            onClick={() =>
+                              setViewingSlip({
+                                id: p.id,
+                                url: p.payment_proof_url || '',
+                                email: p.profiles?.email || p.user_id,
+                                name: p.profiles?.full_name,
+                                method: methodLabel,
+                                amount: p.amount,
+                                status: p.status,
+                                date: p.created_at,
+                                type: planLabel,
+                              })
+                            }
+                            className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-dark-800 border border-white/15 overflow-hidden flex-shrink-0 cursor-pointer group relative hover:scale-105 transition-transform"
+                          >
+                            {p.payment_proof_url.endsWith('.pdf') ? (
+                              <div className="w-full h-full flex flex-col items-center justify-center bg-red-950/40 text-red-400 p-1 text-center">
+                                <span className="text-xl">📄</span>
+                                <span className="text-[9px] font-bold">PDF Slip</span>
+                              </div>
+                            ) : (
+                              <img src={p.payment_proof_url} alt="Receipt Slip" className="w-full h-full object-cover" />
+                            )}
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-[10px] font-bold text-white transition-opacity">
+                              🔍 View Slip
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-dark-800 border border-white/5 flex items-center justify-center text-dark-500 text-xs text-center p-2 flex-shrink-0">
+                            No Slip
+                          </div>
+                        )}
+
+                        {/* Details */}
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm sm:text-base font-bold text-white">
+                              {p.profiles?.full_name || p.profiles?.email || p.user_id}
+                            </span>
+                            {p.profiles?.full_name && (
+                              <span className="text-xs text-dark-400 font-mono">({p.profiles?.email})</span>
+                            )}
+                            {/* Status Pill */}
+                            <span
+                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide ${
+                                p.status === 'verified'
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                  : p.status === 'rejected'
+                                    ? 'bg-red-500/20 text-red-300 border border-red-500/30'
+                                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse'
+                              }`}
+                            >
+                              {p.status === 'verified' ? '✅ Approved' : p.status === 'rejected' ? '❌ Rejected' : '⏳ Pending Review'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-3 text-xs text-dark-300 flex-wrap">
+                            <span className="font-semibold text-brand-400">{formatCurrency(p.amount || 350)}</span>
+                            <span>•</span>
+                            <span className="font-medium text-purple-300">{planLabel}</span>
+                            <span>•</span>
+                            <span className="text-dark-400">{methodLabel}</span>
+                          </div>
+
+                          <p className="text-[11px] text-dark-500">
+                            Submitted: {p.created_at ? new Date(p.created_at).toLocaleString() : 'Recently'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex items-center gap-2 flex-shrink-0 self-end md:self-center">
+                        {p.payment_proof_url && (
+                          <button
+                            onClick={() =>
+                              setViewingSlip({
+                                id: p.id,
+                                url: p.payment_proof_url || '',
+                                email: p.profiles?.email || p.user_id,
+                                name: p.profiles?.full_name,
+                                method: methodLabel,
+                                amount: p.amount,
+                                status: p.status,
+                                date: p.created_at,
+                                type: planLabel,
+                              })
+                            }
+                            className="px-3 py-1.5 rounded-xl bg-white/10 text-white text-xs font-semibold hover:bg-white/20 transition-colors"
+                          >
+                            👁️ View Slip
+                          </button>
+                        )}
+
+                        {p.status === 'pending' && (
+                          <>
+                            <button
+                              onClick={() => verifyPayment(p.id, 'verified')}
+                              disabled={actionLoading === `verify-${p.id}`}
+                              className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500 transition-colors shadow-md shadow-emerald-600/20 disabled:opacity-50"
+                            >
+                              ✅ Approve &amp; Unlock VIP
+                            </button>
+                            <button
+                              onClick={() => verifyPayment(p.id, 'rejected')}
+                              disabled={actionLoading === `verify-${p.id}`}
+                              className="px-3 py-2 rounded-xl bg-red-600/20 text-red-300 border border-red-500/30 text-xs font-bold hover:bg-red-600/30 transition-colors disabled:opacity-50"
+                            >
+                              ❌ Reject
+                            </button>
+                          </>
+                        )}
+
+                        {p.status === 'verified' && (
+                          <button
+                            onClick={() => verifyPayment(p.id, 'rejected')}
+                            disabled={actionLoading === `verify-${p.id}`}
+                            className="px-3 py-1.5 rounded-xl bg-red-500/10 text-red-400 border border-red-500/20 text-xs font-medium hover:bg-red-500/20 transition-colors disabled:opacity-50"
+                          >
+                            Revoke Approval
+                          </button>
+                        )}
+
+                        {p.status === 'rejected' && (
+                          <button
+                            onClick={() => verifyPayment(p.id, 'verified')}
+                            disabled={actionLoading === `verify-${p.id}`}
+                            className="px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-medium hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
+                          >
+                            Re-Approve
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         )}
 
         {/* USERS TAB */}
         {tab === 'users' && (
-          <div className="space-y-4">
-            <input
-              type="text"
-              value={userSearch}
-              onChange={(e) => setUserSearch(e.target.value)}
-              placeholder="Search users..."
-              className="w-full max-w-md px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm"
-            />
-            {filteredUsers.map((u) => (
-              <div key={u.id} className="p-4 rounded-xl bg-dark-800/50 border border-white/5 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-white">{u.full_name || u.email}</p>
-                  <p className="text-xs text-dark-400">{u.email}</p>
-                </div>
-                <button onClick={() => handleGrantAccess(u.id)} className="px-3 py-1.5 rounded-lg text-xs bg-brand-600 text-white">Grant VIP</button>
+          <div className="space-y-6 animate-fade-in">
+            {/* Header & Search */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-dark-900/60 p-4 rounded-2xl border border-white/10">
+              <div>
+                <h3 className="text-base font-bold text-white">Registered Users ({users.length})</h3>
+                <p className="text-xs text-dark-400 mt-0.5">Manage user roles, grant or revoke VIP access, and view user history</p>
               </div>
-            ))}
+              <input
+                type="text"
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                placeholder="Search users by name or email..."
+                className="w-full sm:w-72 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs placeholder-dark-500 focus:outline-none focus:border-brand-500"
+              />
+            </div>
+
+            {usersLoading ? (
+              <div className="py-12 flex justify-center">
+                <LoadingSpinner text="Loading users list..." />
+              </div>
+            ) : filteredUsers.length === 0 ? (
+              <div className="text-center py-16 rounded-2xl bg-dark-900/40 border border-white/5">
+                <p className="text-3xl mb-2">👥</p>
+                <p className="text-dark-300 text-sm font-medium">No users found</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3">
+                {filteredUsers.map((u) => {
+                  const purchasesList = u.purchases || [];
+                  const activeLifetime = purchasesList.find((p: any) => p.status === 'verified' && p.type === 'full');
+                  const activeMonthly = purchasesList.find((p: any) => p.status === 'verified' && p.type === 'single');
+                  const activeVIP = activeLifetime || activeMonthly;
+
+                  const userRole = u.role || (u.is_admin ? 'admin' : 'user');
+
+                  return (
+                    <div
+                      key={u.id}
+                      className="p-4 sm:p-5 rounded-2xl bg-dark-900/80 border border-white/10 hover:border-white/20 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4"
+                    >
+                      {/* User Info */}
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-brand-600 to-purple-600 text-white flex items-center justify-center font-bold text-lg shadow-md flex-shrink-0">
+                          {(u.full_name || u.email || 'U').charAt(0).toUpperCase()}
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-base font-bold text-white">{u.full_name || u.email}</span>
+                            {u.full_name && (
+                              <span className="text-xs text-dark-400 font-mono">({u.email})</span>
+                            )}
+
+                            {/* Staff Role Badge */}
+                            {(u.is_admin || userRole === 'admin') ? (
+                              <span className="px-2.5 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/30 text-[10px] font-bold">
+                                🛡️ Admin
+                              </span>
+                            ) : userRole === 'editor' ? (
+                              <span className="px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10px] font-bold">
+                                ✍️ Editor
+                              </span>
+                            ) : userRole === 'moderator' ? (
+                              <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-bold">
+                                🛡️ Moderator
+                              </span>
+                            ) : null}
+
+                            {/* VIP Status Pill */}
+                            {activeLifetime ? (
+                              <span className="px-2.5 py-0.5 rounded-full bg-gradient-to-r from-brand-600 to-amber-500 text-white text-[10px] font-extrabold tracking-wide uppercase shadow-sm">
+                                👑 VIP Lifetime
+                              </span>
+                            ) : activeMonthly ? (
+                              <span className="px-2.5 py-0.5 rounded-full bg-purple-600/30 text-purple-200 border border-purple-500/40 text-[10px] font-bold uppercase">
+                                💜 VIP 1 Month
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-0.5 rounded-full bg-white/5 text-dark-400 border border-white/5 text-[10px] font-medium">
+                                👤 Free User
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-3 text-xs text-dark-400 flex-wrap">
+                            <span>Registered: {u.created_at ? new Date(u.created_at).toLocaleDateString() : 'N/A'}</span>
+                            <span>•</span>
+                            <span>Slips Uploaded: {purchasesList.length}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* User Actions */}
+                      <div className="flex items-center gap-2 flex-wrap self-end md:self-center">
+                        {/* Slips History Button */}
+                        {purchasesList.length > 0 && (
+                          <button
+                            onClick={() => setSelectedUserSlips({ user: u, slips: purchasesList })}
+                            className="px-3 py-1.5 rounded-xl bg-white/10 text-white text-xs font-medium hover:bg-white/20 transition-colors"
+                          >
+                            🧾 Slips ({purchasesList.length})
+                          </button>
+                        )}
+
+                        {/* Role Selector Dropdown */}
+                        <select
+                          value={userRole}
+                          onChange={(e) => setUserRole(u.id, e.target.value as any)}
+                          disabled={actionLoading === `role-${u.id}`}
+                          className="px-2.5 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs text-dark-200 font-medium focus:outline-none focus:border-brand-500 cursor-pointer"
+                        >
+                          <option value="user" className="bg-dark-900 text-white">Role: User</option>
+                          <option value="moderator" className="bg-dark-900 text-white">Role: Moderator</option>
+                          <option value="editor" className="bg-dark-900 text-white">Role: Editor</option>
+                          <option value="admin" className="bg-dark-900 text-white">Role: Admin</option>
+                        </select>
+
+                        {/* Grant or Revoke VIP Buttons */}
+                        {activeVIP ? (
+                          <button
+                            onClick={() => handleRevokeAccess(u.id, activeVIP.id)}
+                            disabled={actionLoading === `revoke-${activeVIP.id}`}
+                            className="px-3 py-1.5 rounded-xl bg-red-500/20 text-red-300 border border-red-500/30 text-xs font-bold hover:bg-red-500/30 transition-colors disabled:opacity-50"
+                          >
+                            ❌ Revoke VIP
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleGrantAccess(u.id, 'full')}
+                              disabled={actionLoading === `grant-${u.id}`}
+                              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-brand-600 to-amber-500 text-white text-xs font-bold hover:brightness-110 transition-all shadow-sm disabled:opacity-50"
+                            >
+                              👑 Grant Lifetime VIP
+                            </button>
+                            <button
+                              onClick={() => handleGrantAccess(u.id, 'single')}
+                              disabled={actionLoading === `grant-${u.id}`}
+                              className="px-3 py-1.5 rounded-xl bg-purple-600/30 text-purple-200 border border-purple-500/30 text-xs font-semibold hover:bg-purple-600/40 transition-colors disabled:opacity-50"
+                            >
+                              💜 Grant 1 Month VIP
+                            </button>
+                          </>
+                        )}
+
+                        {/* Delete User Account Button */}
+                        <button
+                          onClick={() => handleDeleteUserAccount(u.id, u.email)}
+                          disabled={actionLoading === `delete-user-${u.id}`}
+                          className="p-1.5 rounded-xl bg-white/5 hover:bg-red-500/20 text-dark-400 hover:text-red-400 border border-white/5 transition-colors"
+                          title="Delete User Account"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ===== PAYMENT RECEIPT SLIP PREVIEW MODAL ===== */}
+        {viewingSlip && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setViewingSlip(null)} />
+            <div className="relative w-full max-w-xl max-h-[90vh] overflow-y-auto animate-scale-in rounded-2xl border border-white/10 bg-dark-900/95 backdrop-blur-xl shadow-2xl p-6">
+              <button
+                onClick={() => setViewingSlip(null)}
+                className="absolute top-4 right-4 text-dark-400 hover:text-white transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+
+              <h3 className="text-lg font-bold text-white mb-1">Payment Receipt Slip</h3>
+              <p className="text-xs text-dark-400 mb-4">{viewingSlip.email} ({viewingSlip.method})</p>
+
+              {/* Slip Image / PDF Preview */}
+              <div className="bg-black/50 rounded-xl p-2 border border-white/10 mb-4 flex justify-center items-center min-h-[250px]">
+                {viewingSlip.url.endsWith('.pdf') ? (
+                  <div className="text-center py-8">
+                    <span className="text-5xl block mb-2">📄</span>
+                    <p className="text-sm font-bold text-white mb-3">PDF Receipt Document</p>
+                    <a
+                      href={viewingSlip.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2 rounded-xl bg-brand-600 text-white text-xs font-bold hover:bg-brand-500 transition-colors inline-block"
+                    >
+                      Open PDF in New Window ↗
+                    </a>
+                  </div>
+                ) : (
+                  <img src={viewingSlip.url} alt="Receipt Slip" className="max-h-[60vh] max-w-full rounded-lg object-contain" />
+                )}
+              </div>
+
+              {/* Slip Info Card */}
+              <div className="p-3 rounded-xl bg-white/5 border border-white/5 space-y-1.5 text-xs mb-5">
+                <div className="flex justify-between">
+                  <span className="text-dark-400">User:</span>
+                  <span className="font-semibold text-white">{viewingSlip.email}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-dark-400">Amount:</span>
+                  <span className="font-bold text-brand-400">{formatCurrency(viewingSlip.amount || 350)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-dark-400">Method:</span>
+                  <span className="text-white font-medium">{viewingSlip.method}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-dark-400">Status:</span>
+                  <span className={`font-bold uppercase ${viewingSlip.status === 'verified' ? 'text-emerald-400' : viewingSlip.status === 'rejected' ? 'text-red-400' : 'text-amber-400'}`}>
+                    {viewingSlip.status}
+                  </span>
+                </div>
+                {viewingSlip.date && (
+                  <div className="flex justify-between">
+                    <span className="text-dark-400">Submitted Date:</span>
+                    <span className="text-dark-300">{new Date(viewingSlip.date).toLocaleString()}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Actions */}
+              {viewingSlip.id && (
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => verifyPayment(viewingSlip.id!, 'verified')}
+                    className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-500 transition-colors"
+                  >
+                    ✅ Approve &amp; Unlock VIP
+                  </button>
+                  <button
+                    onClick={() => verifyPayment(viewingSlip.id!, 'rejected')}
+                    className="flex-1 py-2.5 rounded-xl bg-red-600/20 text-red-300 border border-red-500/30 font-bold text-xs hover:bg-red-600/30 transition-colors"
+                  >
+                    ❌ Reject Slip
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ===== USER SLIPS HISTORY MODAL ===== */}
+        {selectedUserSlips && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setSelectedUserSlips(null)} />
+            <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-scale-in rounded-2xl border border-white/10 bg-dark-900/95 backdrop-blur-xl shadow-2xl p-6">
+              <button
+                onClick={() => setSelectedUserSlips(null)}
+                className="absolute top-4 right-4 text-dark-400 hover:text-white transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+
+              <h3 className="text-lg font-bold text-white mb-1">Payment History for {selectedUserSlips.user.email}</h3>
+              <p className="text-xs text-dark-400 mb-6">Total Slips Uploaded: {selectedUserSlips.slips.length}</p>
+
+              <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+                {selectedUserSlips.slips.map((p: any) => (
+                  <div key={p.id} className="p-4 rounded-xl bg-dark-800/80 border border-white/10 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      {p.payment_proof_url ? (
+                        <img
+                          src={p.payment_proof_url}
+                          alt="Slip"
+                          onClick={() => setViewingSlip({ id: p.id, url: p.payment_proof_url || '', email: selectedUserSlips.user.email, method: p.payment_method, amount: p.amount, status: p.status, date: p.created_at })}
+                          className="w-14 h-14 rounded-lg object-cover cursor-pointer hover:scale-105 transition-transform border border-white/10"
+                        />
+                      ) : (
+                        <div className="w-14 h-14 rounded-lg bg-dark-700 flex items-center justify-center text-[10px] text-dark-400">No Slip</div>
+                      )}
+                      <div>
+                        <p className="text-xs font-bold text-white">{formatCurrency(p.amount || 350)} • {p.payment_method}</p>
+                        <p className="text-[11px] text-dark-400">{new Date(p.created_at).toLocaleString()}</p>
+                        <span className={`text-[10px] font-bold uppercase ${p.status === 'verified' ? 'text-emerald-400' : p.status === 'rejected' ? 'text-red-400' : 'text-amber-400'}`}>
+                          ● {p.status}
+                        </span>
+                      </div>
+                    </div>
+                    {p.status === 'pending' && (
+                      <div className="flex gap-2">
+                        <button onClick={() => verifyPayment(p.id, 'verified')} className="px-3 py-1.5 rounded-lg text-xs bg-emerald-600 text-white font-bold">Approve</button>
+                        <button onClick={() => verifyPayment(p.id, 'rejected')} className="px-3 py-1.5 rounded-lg text-xs bg-red-600/20 text-red-300 border border-red-500/30 font-bold">Reject</button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 

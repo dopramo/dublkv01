@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 
 function getSupabaseClient() {
@@ -24,6 +25,17 @@ function getSupabaseClient() {
   );
 }
 
+function getServiceClient() {
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  const isServiceJwt = serviceKey.startsWith('eyJ');
+
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    isServiceJwt ? serviceKey : process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+}
+
 async function canMaintainUser(supabase: any, userId: string): Promise<boolean> {
   try {
     const { data } = await supabase
@@ -38,26 +50,33 @@ async function canMaintainUser(supabase: any, userId: string): Promise<boolean> 
   }
 }
 
-// GET - List pending payments
+// GET - List payments (pending, verified, rejected, or all)
 export async function GET(request: NextRequest) {
-  const supabase = getSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const authClient = getSupabaseClient();
+  const { data: { user } } = await authClient.auth.getUser();
   
-  if (!user || !(await canMaintainUser(supabase, user.id))) {
+  if (!user || !(await canMaintainUser(authClient, user.id))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
 
-  const statusFilter = request.nextUrl.searchParams.get('status') || 'pending';
+  const statusFilter = request.nextUrl.searchParams.get('status');
 
-  const { data: purchases, error } = await supabase
+  const db = getServiceClient();
+
+  let query = db
     .from('purchases')
     .select(`
       *,
       profiles:user_id (email, full_name),
       movies:movie_id (title)
     `)
-    .eq('status', statusFilter)
     .order('created_at', { ascending: false });
+
+  if (statusFilter && statusFilter !== 'all') {
+    query = query.eq('status', statusFilter);
+  }
+
+  const { data: purchases, error } = await query;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -66,22 +85,24 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ purchases: purchases || [] });
 }
 
-// PATCH - Verify or reject payment
+// PATCH - Verify, reject, or reset payment status
 export async function PATCH(request: NextRequest) {
-  const supabase = getSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const authClient = getSupabaseClient();
+  const { data: { user } } = await authClient.auth.getUser();
   
-  if (!user || !(await canMaintainUser(supabase, user.id))) {
+  if (!user || !(await canMaintainUser(authClient, user.id))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
 
   const { purchaseId, status } = await request.json();
 
-  if (!purchaseId || !['verified', 'rejected'].includes(status)) {
+  if (!purchaseId || !['verified', 'rejected', 'pending'].includes(status)) {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
   }
 
-  const { data: purchase, error } = await supabase
+  const db = getServiceClient();
+
+  const { data: purchase, error } = await db
     .from('purchases')
     .update({ status })
     .eq('id', purchaseId)

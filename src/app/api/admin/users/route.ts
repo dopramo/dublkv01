@@ -169,34 +169,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'type must be "single" or "full"' }, { status: 400 });
   }
 
-  if (type === 'single' && !movieId) {
-    return NextResponse.json({ error: 'movieId required for single access' }, { status: 400 });
-  }
-
   // ✅ Use service client — bypasses RLS so we can insert for any userId
   const db = getServiceClient();
 
-  // Check if user already has an active verified VIP Full Access
-  if (type === 'full') {
-    const { data: existing } = await db
-      .from('purchases')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('type', 'full')
-      .eq('status', 'verified')
-      .maybeSingle();
+  // Check if user already has an active verified VIP Access of this type
+  const { data: existing } = await db
+    .from('purchases')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('type', type)
+    .eq('status', 'verified')
+    .maybeSingle();
 
-    if (existing) {
-      return NextResponse.json({ error: 'User already has active VIP Full Access' }, { status: 400 });
-    }
+  if (existing) {
+    return NextResponse.json(
+      { error: `User already has active ${type === 'full' ? 'VIP Lifetime' : 'VIP 1 Month'} Access` },
+      { status: 400 }
+    );
   }
 
   const { data: purchase, error } = await db
     .from('purchases')
     .insert({
       user_id: userId,
-      movie_id: type === 'single' ? movieId : null,
-      type: 'full',
+      movie_id: movieId || null,
+      type: type,         // 'full' for Lifetime, 'single' for 1 Month
       amount: 0,          // admin-granted, no charge
       status: 'verified',
       payment_method: 'admin_grant',
