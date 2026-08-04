@@ -60,7 +60,7 @@ type Step = 'plans' | 'payment' | 'proof';
 export default function PricingModal({ isOpen, onClose, movieTitle, movieSlug }: PricingModalProps) {
   const { user, openAuthModal } = useAuth();
   const [step, setStep] = useState<Step>('plans');
-  const [selectedPlan, setSelectedPlan] = useState<'single' | 'full' | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'lifetime' | 'single' | 'full' | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [proofPreview, setProofPreview] = useState<string | null>(null);
@@ -119,7 +119,7 @@ export default function PricingModal({ isOpen, onClose, movieTitle, movieSlug }:
     window.location.href = `/watch/${movieSlug}?mode=free`;
   };
 
-  const handleSelectPlan = (plan: 'single' | 'full') => {
+  const handleSelectPlan = (plan: 'monthly' | 'lifetime' | 'single' | 'full') => {
     setSelectedPlan(plan);
     setStep('payment');
   };
@@ -203,11 +203,15 @@ export default function PricingModal({ isOpen, onClose, movieTitle, movieSlug }:
         // Fallback to base64 preview URL for 100% upload guarantee
       }
 
+      const isLifetimePlan = selectedPlan === 'lifetime' || selectedPlan === 'full';
+      const planAmount = isLifetimePlan ? 2500 : 350;
+      const planType = isLifetimePlan ? 'full' : 'single';
+
       const newPurchase = {
         user_id: user.id,
         movie_id: null,
-        type: 'full',
-        amount: 350,
+        type: planType,
+        amount: planAmount,
         payment_method: selectedMethod,
         payment_proof_url: finalProofUrl,
         status: 'pending',
@@ -384,7 +388,7 @@ export default function PricingModal({ isOpen, onClose, movieTitle, movieSlug }:
                       {/* FREE */}
                       <button
                         onClick={handleFreeTrial}
-                        className="w-full p-5 rounded-xl border border-emerald-500/30 bg-emerald-500/5 hover:border-emerald-500/60 hover:bg-emerald-500/10 text-left transition-all duration-200 relative overflow-hidden"
+                        className="w-full p-4 sm:p-5 rounded-xl border border-emerald-500/30 bg-emerald-500/5 hover:border-emerald-500/60 hover:bg-emerald-500/10 text-left transition-all duration-200 relative overflow-hidden"
                       >
                         <div className="absolute -top-px -right-px px-3 py-1 bg-emerald-600 text-white text-[10px] font-bold rounded-bl-xl">
                           FREE
@@ -400,51 +404,79 @@ export default function PricingModal({ isOpen, onClose, movieTitle, movieSlug }:
                               <p className="text-[11px] text-emerald-400 flex items-center gap-1">
                                 <span>✓</span> All movies &amp; series — no payment ever
                               </p>
-                              <p className="text-[11px] text-emerald-400 flex items-center gap-1">
-                                <span>✓</span> No sign-up needed
-                              </p>
                               <p className="text-[11px] text-dark-500 flex items-center gap-1">
                                 <span>✗</span> Includes ads
                               </p>
                             </div>
                           </div>
                           <div className="text-right ml-4 flex-shrink-0">
-                            <p className="text-3xl font-bold text-emerald-400">FREE</p>
+                            <p className="text-2xl sm:text-3xl font-bold text-emerald-400">FREE</p>
                             <p className="text-[10px] text-dark-500">with ads</p>
                           </div>
                         </div>
                       </button>
 
-                      {/* VIP — Rs.350 / $1 Lifetime */}
+                      {/* VIP — 1 MONTH ($1 / Rs 350) */}
                       <button
-                        onClick={() => handleSelectPlan('full')}
-                        className="w-full p-5 rounded-xl border border-brand-500/30 bg-brand-500/5 hover:border-brand-500/60 hover:bg-brand-500/10 text-left transition-all duration-200 relative overflow-hidden"
+                        onClick={() => handleSelectPlan('monthly')}
+                        className="w-full p-4 sm:p-5 rounded-xl border border-purple-500/30 bg-purple-500/5 hover:border-purple-500/60 hover:bg-purple-500/10 text-left transition-all duration-200 relative overflow-hidden"
                       >
-                        <div className="absolute -top-px -right-px px-3 py-1 bg-gradient-to-r from-brand-600 to-amber-500 text-white text-[10px] font-bold rounded-bl-xl">
-                          👑 VIP LIFETIME
+                        <div className="absolute -top-px -right-px px-3 py-1 bg-purple-600 text-white text-[10px] font-bold rounded-bl-xl">
+                          1 MONTH
                         </div>
                         <div className="flex items-center justify-between">
                           <div>
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="text-lg">⚡</span>
-                              <h3 className="text-base font-semibold text-white">VIP — Lifetime Access</h3>
+                              <span className="text-lg">👑</span>
+                              <h3 className="text-base font-semibold text-white">VIP — 1 Month Access</h3>
                             </div>
-                            <p className="text-xs text-dark-400">Pay Rs. 350 or $1 USDT &amp; upload receipt slip</p>
+                            <p className="text-xs text-dark-400">Pay Rs. 350 or $1 USDT &amp; upload slip</p>
                             <div className="flex flex-col gap-0.5 mt-1.5">
-                              <p className="text-[11px] text-brand-300 flex items-center gap-1">
-                                <span>✓</span> Ad-free streaming on movies &amp; series
+                              <p className="text-[11px] text-purple-300 flex items-center gap-1">
+                                <span>✓</span> 1 Month ad-free streaming
                               </p>
-                              <p className="text-[11px] text-brand-300 flex items-center gap-1">
-                                <span>✓</span> Lifetime VIP access for all content
-                              </p>
-                              <p className="text-[11px] text-brand-300 flex items-center gap-1">
+                              <p className="text-[11px] text-purple-300 flex items-center gap-1">
                                 <span>✓</span> Direct Admin review &amp; activation
                               </p>
                             </div>
                           </div>
                           <div className="text-right ml-4 flex-shrink-0">
-                            <p className="text-2xl sm:text-3xl font-bold text-white">Rs. 350 / $1</p>
-                            <p className="text-[10px] text-dark-500">lifetime one-time</p>
+                            <p className="text-xl sm:text-2xl font-bold text-white">Rs. 350 / $1</p>
+                            <p className="text-[10px] text-dark-400">for 1 month</p>
+                          </div>
+                        </div>
+                      </button>
+
+                      {/* VIP — LIFETIME ($8 / Rs 2500 POPULAR) */}
+                      <button
+                        onClick={() => handleSelectPlan('lifetime')}
+                        className="w-full p-4 sm:p-5 rounded-xl border-2 border-brand-500 bg-brand-500/10 hover:border-amber-400 hover:bg-brand-500/20 text-left transition-all duration-200 relative overflow-hidden shadow-lg shadow-brand-500/20"
+                      >
+                        <div className="absolute -top-px -right-px px-3 py-1 bg-gradient-to-r from-amber-500 to-brand-600 text-white text-[10px] font-extrabold tracking-wider rounded-bl-xl uppercase shadow-md animate-pulse">
+                          🔥 POPULAR — LIFETIME
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-lg">⚡</span>
+                              <h3 className="text-base font-bold text-white">VIP — Lifetime Access</h3>
+                            </div>
+                            <p className="text-xs text-dark-300">Pay Rs. 2,500 or $8 USDT &amp; upload slip</p>
+                            <div className="flex flex-col gap-0.5 mt-1.5">
+                              <p className="text-[11px] text-brand-300 font-medium flex items-center gap-1">
+                                <span>✓</span> Unlimited Lifetime Ad-free streaming
+                              </p>
+                              <p className="text-[11px] text-brand-300 font-medium flex items-center gap-1">
+                                <span>✓</span> Permanent VIP badge — Never pay again
+                              </p>
+                              <p className="text-[11px] text-brand-300 font-medium flex items-center gap-1">
+                                <span>✓</span> Priority Admin review &amp; activation
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right ml-4 flex-shrink-0">
+                            <p className="text-xl sm:text-2xl font-black text-amber-400">Rs. 2,500 / $8</p>
+                            <p className="text-[10px] text-dark-400 uppercase font-bold">one-time lifetime</p>
                           </div>
                         </div>
                       </button>
@@ -457,24 +489,30 @@ export default function PricingModal({ isOpen, onClose, movieTitle, movieSlug }:
                   <div className="animate-fade-in">
                     <h2 className="text-xl font-display font-bold text-white mb-1">Payment Method</h2>
                     <p className="text-sm text-dark-400 mb-1">
-                      VIP Lifetime Access — <span className="text-brand-400 font-semibold">Rs. 350 / $1</span>
+                      VIP {selectedPlan === 'monthly' ? '1 Month Access' : 'Lifetime Access'} — <span className="text-brand-400 font-bold">{selectedPlan === 'monthly' ? 'Rs. 350 / $1' : 'Rs. 2,500 / $8'}</span>
                     </p>
                     <p className="text-xs text-dark-500 mb-6">Select where you want to deposit or transfer payment</p>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {PAYMENT_METHODS.map((method) => (
-                        <button
-                          key={method.id}
-                          onClick={() => handleSelectPayment(method.id)}
-                          className="flex items-center gap-3 p-4 rounded-xl border border-white/10 bg-white/5 hover:border-brand-500/40 hover:bg-brand-500/5 text-left transition-all duration-200"
-                        >
-                          <span className="text-2xl">{method.icon}</span>
-                          <div>
-                            <span className="text-sm font-medium text-white block">{method.name}</span>
-                            <span className="text-[10px] text-dark-400">{method.subtext}</span>
-                          </div>
-                        </button>
-                      ))}
+                      {PAYMENT_METHODS.map((method) => {
+                        const methodSubtext = method.id === 'bank_transfer'
+                          ? (selectedPlan === 'monthly' ? 'Rs. 350.00 • Slip Required' : 'Rs. 2,500.00 • Slip Required')
+                          : (selectedPlan === 'monthly' ? '$1.00 USDT • Slip Required' : '$8.00 USDT • Slip Required');
+
+                        return (
+                          <button
+                            key={method.id}
+                            onClick={() => handleSelectPayment(method.id)}
+                            className="flex items-center gap-3 p-4 rounded-xl border border-white/10 bg-white/5 hover:border-brand-500/40 hover:bg-brand-500/5 text-left transition-all duration-200"
+                          >
+                            <span className="text-2xl">{method.icon}</span>
+                            <div>
+                              <span className="text-sm font-medium text-white block">{method.name}</span>
+                              <span className="text-[10px] text-dark-400">{methodSubtext}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -484,7 +522,7 @@ export default function PricingModal({ isOpen, onClose, movieTitle, movieSlug }:
                   <div className="animate-fade-in">
                     <h2 className="text-xl font-display font-bold text-white mb-1">Upload Payment Slip</h2>
                     <p className="text-xs text-dark-500 mb-4">
-                      VIP Lifetime Access via {selectedMethodInfo?.name}
+                      VIP {selectedPlan === 'monthly' ? '1 Month Access (Rs. 350 / $1)' : 'Lifetime Access (Rs. 2,500 / $8)'} via {selectedMethodInfo?.name}
                     </p>
 
                     {/* Payment Account Details */}
@@ -503,16 +541,29 @@ export default function PricingModal({ isOpen, onClose, movieTitle, movieSlug }:
                         )}
 
                         <div className="grid grid-cols-2 gap-2 py-2 border-y border-white/5">
-                          {selectedMethodInfo.details.map((d, idx) => (
-                            <div key={idx} className="bg-dark-900/60 p-2 rounded-lg border border-white/5">
-                              <p className="text-[10px] text-dark-400 font-medium">{d.label}</p>
-                              <p className="text-xs font-mono font-bold text-white select-all">{d.value}</p>
-                            </div>
-                          ))}
+                          {selectedMethodInfo.details.map((d, idx) => {
+                            let displayVal = d.value;
+                            if (d.label === 'Amount to Pay') {
+                              if (selectedMethodInfo.id === 'bank_transfer') {
+                                displayVal = selectedPlan === 'monthly' ? 'Rs. 350.00' : 'Rs. 2,500.00';
+                              } else {
+                                displayVal = selectedPlan === 'monthly' ? '$1.00 USDT' : '$8.00 USDT';
+                              }
+                            }
+                            return (
+                              <div key={idx} className="bg-dark-900/60 p-2 rounded-lg border border-white/5">
+                                <p className="text-[10px] text-dark-400 font-medium">{d.label}</p>
+                                <p className="text-xs font-mono font-bold text-white select-all">{displayVal}</p>
+                              </div>
+                            );
+                          })}
                         </div>
 
                         <p className="text-xs text-brand-200/80 leading-relaxed">
-                          📌 {selectedMethodInfo.instructions}
+                          📌 {selectedMethodInfo.id === 'bank_transfer'
+                            ? `Scan the QR code or deposit/transfer ${selectedPlan === 'monthly' ? 'Rs. 350' : 'Rs. 2,500'} to the Dialog Finance account above. Keep your printed or digital receipt slip (Image or PDF).`
+                            : `Send ${selectedPlan === 'monthly' ? '$1.00' : '$8.00'} USDT via ${selectedMethodInfo.name} to the Pay ID above. Upload a screenshot of the payment confirmation.`
+                          }
                         </p>
                       </div>
                     )}
