@@ -23,6 +23,7 @@ interface TVEpisode {
   title: string;
   description?: string;
   servers: StreamServer[];
+  vip_servers?: StreamServer[];
 }
 
 interface TVSeason {
@@ -107,6 +108,7 @@ export default function AdminPage() {
   }>({ title: '', description: '', status: 'Completed', seasons: [] });
   const [selectedSeasonIdx, setSelectedSeasonIdx] = useState(0);
   const [selectedEpisodeIdx, setSelectedEpisodeIdx] = useState(0);
+  const [tvServerTab, setTvServerTab] = useState<'free' | 'vip'>('free');
 
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
@@ -413,24 +415,80 @@ export default function AdminPage() {
   const startEditTVSeries = (series: Movie) => {
     setEditingTVSeries(series.id);
     const tvPayload = series.free_servers || {};
-    const seasons: TVSeason[] = tvPayload.seasons || [
-      {
-        season_number: 1,
-        name: 'SEASON 1',
-        episodes: Array.from({ length: 10 }, (_, i) => ({
-          episode_number: i + 1,
-          title: `Episode ${i + 1}`,
-          servers: [
-            { name: 'SERVER 1', input_type: 'url', url: `https://vidsrc.me/embed/tv/${series.tmdb_id}/1/${i + 1}`, enabled: true },
-            { name: 'SERVER 2', input_type: 'url', url: `https://embed.su/embed/tv/${series.tmdb_id}/1/${i + 1}`, enabled: true },
-            { name: 'SERVER 3', input_type: 'url', url: `https://2embed.org/embed/tv/${series.tmdb_id}/1/${i + 1}`, enabled: true },
-            { name: 'SERVER 4', input_type: 'url', url: `https://autoembed.co/tv/tmdb/${series.tmdb_id}-1-${i + 1}`, enabled: true },
-            { name: 'SERVER 5', input_type: 'url', url: `https://multiembed.mov/directstream.php?video_id=${series.tmdb_id}&s=1&e=${i + 1}`, enabled: true },
-            { name: 'SERVER 6', input_type: 'url', url: `https://vidlink.pro/tv/${series.tmdb_id}/1/${i + 1}`, enabled: true },
-          ]
+
+    const normalizeTVEpisodes = (rawEps: any[], tmdbId: number, seasonNum: number): TVEpisode[] => {
+      const epsToMap = rawEps && rawEps.length > 0 ? rawEps : Array.from({ length: 10 }, (_, i) => ({ episode_number: i + 1 }));
+      return epsToMap.map((ep, i) => {
+        const epNum = ep.episode_number || i + 1;
+        const rawFree = Array.isArray(ep.servers) ? ep.servers : [];
+        const servers: StreamServer[] = Array.from({ length: 6 }, (_, srvIdx) => {
+          const s = rawFree[srvIdx];
+          if (s) {
+            const isEmbed = s.input_type === 'embed' || (s.embed_code && !s.url);
+            return {
+              id: s.id || `srv-${srvIdx + 1}`,
+              name: s.name || `SERVER ${srvIdx + 1}`,
+              input_type: isEmbed ? 'embed' : 'url',
+              embed_code: s.embed_code || (isEmbed ? s.url || '' : ''),
+              url: s.url || (!isEmbed ? s.embed_code || '' : ''),
+              enabled: s.enabled !== false,
+            };
+          }
+          return {
+            name: `SERVER ${srvIdx + 1}`,
+            input_type: 'url',
+            url: srvIdx === 0 ? `https://vidsrc.me/embed/tv/${tmdbId}/${seasonNum}/${epNum}` : '',
+            embed_code: '',
+            enabled: true,
+          };
+        });
+
+        const rawVip = Array.isArray(ep.vip_servers) ? ep.vip_servers : [];
+        const vip_servers: StreamServer[] = Array.from({ length: 6 }, (_, srvIdx) => {
+          const s = rawVip[srvIdx];
+          if (s) {
+            const isEmbed = s.input_type === 'embed' || (s.embed_code && !s.url);
+            return {
+              id: s.id || `vip-srv-${srvIdx + 1}`,
+              name: s.name || `VIP SERVER ${srvIdx + 1}`,
+              input_type: isEmbed ? 'embed' : 'url',
+              embed_code: s.embed_code || (isEmbed ? s.url || '' : ''),
+              url: s.url || (!isEmbed ? s.embed_code || '' : ''),
+              enabled: s.enabled !== false,
+            };
+          }
+          return {
+            name: `VIP SERVER ${srvIdx + 1}`,
+            input_type: 'url',
+            url: '',
+            embed_code: '',
+            enabled: true,
+          };
+        });
+
+        return {
+          episode_number: epNum,
+          title: ep.title || `Episode ${epNum}`,
+          description: ep.description || '',
+          servers,
+          vip_servers,
+        };
+      });
+    };
+
+    const seasons: TVSeason[] = (tvPayload.seasons && tvPayload.seasons.length > 0)
+      ? tvPayload.seasons.map((s: any, idx: number) => ({
+          season_number: s.season_number || idx + 1,
+          name: s.name || `SEASON ${s.season_number || idx + 1}`,
+          episodes: normalizeTVEpisodes(s.episodes, series.tmdb_id, s.season_number || idx + 1)
         }))
-      }
-    ];
+      : [
+          {
+            season_number: 1,
+            name: 'SEASON 1',
+            episodes: normalizeTVEpisodes([], series.tmdb_id, 1)
+          }
+        ];
 
     setTvEditForm({
       title: series.title,
@@ -440,6 +498,7 @@ export default function AdminPage() {
     });
     setSelectedSeasonIdx(0);
     setSelectedEpisodeIdx(0);
+    setTvServerTab('free');
     setSaveMessage(null);
   };
 
@@ -490,17 +549,22 @@ export default function AdminPage() {
     showToast(`Episode ${epNum} deleted`, 'success');
   };
 
-  const handleClearServer = (srvIdx: number) => {
+  const handleClearServer = (type: 'free' | 'vip', srvIdx: number) => {
     const seasons = [...tvEditForm.seasons];
-    const servers = [...seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx].servers];
-    servers[srvIdx] = {
-      ...servers[srvIdx],
-      url: '',
-      embed_code: '',
-    };
-    seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx].servers = servers;
-    setTvEditForm({ ...tvEditForm, seasons });
-    showToast(`SERVER ${srvIdx + 1} cleared`, 'success');
+    const ep = { ...seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx] };
+    const key = type === 'vip' ? 'vip_servers' : 'servers';
+    const serverList = ep[key] ? [...ep[key]!] : [];
+    if (serverList[srvIdx]) {
+      serverList[srvIdx] = {
+        ...serverList[srvIdx],
+        url: '',
+        embed_code: '',
+      };
+      ep[key] = serverList;
+      seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx] = ep;
+      setTvEditForm({ ...tvEditForm, seasons });
+      showToast(`${type === 'vip' ? 'VIP ' : ''}SERVER ${srvIdx + 1} cleared`, 'success');
+    }
   };
 
   // Save Movie Edits
@@ -512,13 +576,17 @@ export default function AdminPage() {
         .filter(s => (s.embed_code && s.embed_code.trim()) || (s.url && s.url.trim()))
         .map((s, i) => ({ ...s, order: i + 1 }));
 
+      const cleanVip = editForm.vip_servers
+        .filter(s => (s.embed_code && s.embed_code.trim()) || (s.url && s.url.trim()))
+        .map((s, i) => ({ ...s, order: i + 1 }));
+
       const res = await fetch('/api/admin/movies', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: movie.id,
           free_servers: cleanFree,
-          vip_servers: editForm.vip_servers,
+          vip_servers: cleanVip,
           runtime: editForm.runtime ? parseInt(editForm.runtime) : null,
           description: editForm.description,
         }),
@@ -836,9 +904,13 @@ export default function AdminPage() {
                           <label className="text-xs font-bold text-brand-400 uppercase tracking-wider">
                             👑 VIP Servers (Ad-Free)
                           </label>
-                          <button onClick={() => addServer('vip', 'Google Drive')} className="px-2.5 py-1 text-xs rounded bg-brand-500/10 text-brand-300 border border-brand-500/20">
-                            + Google Drive
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-dark-400">Quick Add:</span>
+                            <button onClick={() => addServer('vip', 'Google Drive')} className="px-2.5 py-1 text-xs rounded bg-brand-500/10 text-brand-300 border border-brand-500/20">+ Google Drive</button>
+                            <button onClick={() => addServer('vip', 'VOE')} className="px-2.5 py-1 text-xs rounded bg-white/5 hover:bg-white/10 text-dark-200">+ VOE</button>
+                            <button onClick={() => addServer('vip', 'Abyss')} className="px-2.5 py-1 text-xs rounded bg-white/5 hover:bg-white/10 text-dark-200">+ Abyss</button>
+                            <button onClick={() => addServer('vip', 'Doodstream')} className="px-2.5 py-1 text-xs rounded bg-white/5 hover:bg-white/10 text-dark-200">+ Doodstream</button>
+                          </div>
                         </div>
 
                         <div className="space-y-3">
@@ -849,15 +921,28 @@ export default function AdminPage() {
                                   type="text"
                                   value={server.name}
                                   onChange={(e) => updateServer('vip', idx, 'name', e.target.value)}
+                                  placeholder="Server Name (e.g. VIP Server 1)"
                                   className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs font-semibold"
                                 />
-                                <button onClick={() => removeServer('vip', idx)} className="px-2 py-1 bg-red-500/10 text-red-400 text-xs rounded">✕</button>
+                                <div className="flex items-center gap-2">
+                                  <select
+                                    value={server.input_type}
+                                    onChange={(e) => updateServer('vip', idx, 'input_type', e.target.value as any)}
+                                    className="px-2.5 py-1 rounded bg-dark-900 border border-white/10 text-white text-xs"
+                                  >
+                                    <option value="url">Direct URL</option>
+                                    <option value="embed">Embed HTML Code</option>
+                                  </select>
+                                  <button onClick={() => moveServer('vip', idx, 'up')} disabled={idx === 0} className="px-2 py-1 bg-white/5 text-xs rounded disabled:opacity-30">▲</button>
+                                  <button onClick={() => moveServer('vip', idx, 'down')} disabled={idx === editForm.vip_servers.length - 1} className="px-2 py-1 bg-white/5 text-xs rounded disabled:opacity-30">▼</button>
+                                  <button onClick={() => removeServer('vip', idx)} className="px-2 py-1 bg-red-500/10 text-red-400 text-xs rounded">✕</button>
+                                </div>
                               </div>
                               <input
                                 type="text"
-                                value={server.url || ''}
-                                onChange={(e) => updateServer('vip', idx, 'url', e.target.value)}
-                                placeholder="Google Drive / Direct URL"
+                                value={server.input_type === 'embed' ? (server.embed_code || '') : (server.url || '')}
+                                onChange={(e) => updateServer('vip', idx, server.input_type === 'embed' ? 'embed_code' : 'url', e.target.value)}
+                                placeholder={server.input_type === 'embed' ? '<iframe src="..." ...></iframe>' : 'Google Drive / Direct URL'}
                                 className="w-full px-3 py-2 rounded-lg bg-dark-950 border border-white/10 text-white text-xs font-mono"
                               />
                             </div>
@@ -1181,31 +1266,70 @@ export default function AdminPage() {
                 {/* Episode Servers Editor */}
                 {tvEditForm.seasons[selectedSeasonIdx]?.episodes[selectedEpisodeIdx] && (
                   <div className="bg-white/5 border border-white/10 p-4 rounded-2xl space-y-4">
-                    <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                    <div className="flex items-center justify-between border-b border-white/10 pb-3 flex-wrap gap-2">
                       <h4 className="text-sm font-bold text-white">
                         Servers for Season {tvEditForm.seasons[selectedSeasonIdx].season_number} — Episode {tvEditForm.seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx].episode_number}
                       </h4>
+                      {/* Sub-tabs for Free vs VIP Episode Servers */}
+                      <div className="flex items-center gap-1 bg-dark-900/80 p-1 rounded-xl border border-white/10">
+                        <button
+                          onClick={() => setTvServerTab('free')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                            tvServerTab === 'free'
+                              ? 'bg-[#00ff73] text-black shadow-md'
+                              : 'text-dark-400 hover:text-white'
+                          }`}
+                        >
+                          🎬 Normal Servers (Free)
+                        </button>
+                        <button
+                          onClick={() => setTvServerTab('vip')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                            tvServerTab === 'vip'
+                              ? 'bg-brand-500 text-white shadow-md'
+                              : 'text-dark-400 hover:text-white'
+                          }`}
+                        >
+                          👑 VIP Servers (Ad-Free)
+                        </button>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {Array.from({ length: 6 }, (_, srvIdx) => {
                         const ep = tvEditForm.seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx];
-                        const server = ep.servers[srvIdx] || { name: `SERVER ${srvIdx + 1}`, input_type: 'url', url: '', enabled: true };
+                        const serverList = tvServerTab === 'vip' ? (ep.vip_servers || []) : (ep.servers || []);
+                        const server = serverList[srvIdx] || {
+                          name: tvServerTab === 'vip' ? `VIP SERVER ${srvIdx + 1}` : `SERVER ${srvIdx + 1}`,
+                          input_type: 'url',
+                          url: '',
+                          enabled: true
+                        };
                         const hasValue = !!(server.url || server.embed_code);
+                        const isVip = tvServerTab === 'vip';
+                        const labelPrefix = isVip ? 'VIP SERVER' : 'SERVER';
 
                         return (
                           <div key={srvIdx} className="p-3 rounded-xl bg-dark-800/90 border border-white/10 space-y-2">
                             <div className="flex items-center justify-between">
-                              <span className="text-xs font-extrabold text-[#00ff73] uppercase">SERVER {srvIdx + 1}</span>
+                              <span className={`text-xs font-extrabold uppercase ${isVip ? 'text-brand-400' : 'text-[#00ff73]'}`}>
+                                {labelPrefix} {srvIdx + 1}
+                              </span>
                               <div className="flex items-center gap-2">
                                 <label className="text-[10px] text-dark-400">Mode:</label>
                                 <select
                                   value={server.input_type || 'url'}
                                   onChange={(e) => {
                                     const seasons = [...tvEditForm.seasons];
-                                    const servers = [...seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx].servers];
-                                    servers[srvIdx] = { ...servers[srvIdx], input_type: e.target.value as any };
-                                    seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx].servers = servers;
+                                    const currEp = seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx];
+                                    const targetKey = isVip ? 'vip_servers' : 'servers';
+                                    const updatedList = [...(currEp[targetKey] || [])];
+                                    updatedList[srvIdx] = {
+                                      ...updatedList[srvIdx],
+                                      name: `${labelPrefix} ${srvIdx + 1}`,
+                                      input_type: e.target.value as any
+                                    };
+                                    currEp[targetKey] = updatedList;
                                     setTvEditForm({ ...tvEditForm, seasons });
                                   }}
                                   className="text-[11px] bg-dark-900 text-white rounded px-2 py-0.5 border border-white/10"
@@ -1215,7 +1339,7 @@ export default function AdminPage() {
                                 </select>
                                 {hasValue && (
                                   <button
-                                    onClick={() => handleClearServer(srvIdx)}
+                                    onClick={() => handleClearServer(tvServerTab, srvIdx)}
                                     className="px-2 py-0.5 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 text-[10px] font-bold transition-colors"
                                     title="Clear this server URL/embed"
                                   >
@@ -1230,17 +1354,20 @@ export default function AdminPage() {
                               value={server.input_type === 'embed' ? (server.embed_code || '') : (server.url || '')}
                               onChange={(e) => {
                                 const seasons = [...tvEditForm.seasons];
-                                const servers = [...seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx].servers];
+                                const currEp = seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx];
+                                const targetKey = isVip ? 'vip_servers' : 'servers';
+                                const updatedList = [...(currEp[targetKey] || [])];
+                                const val = e.target.value;
                                 if (server.input_type === 'embed') {
-                                  servers[srvIdx] = { ...servers[srvIdx], embed_code: e.target.value, name: `SERVER ${srvIdx + 1}` };
+                                  updatedList[srvIdx] = { ...updatedList[srvIdx], embed_code: val, name: `${labelPrefix} ${srvIdx + 1}` };
                                 } else {
-                                  servers[srvIdx] = { ...servers[srvIdx], url: e.target.value, name: `SERVER ${srvIdx + 1}` };
+                                  updatedList[srvIdx] = { ...updatedList[srvIdx], url: val, name: `${labelPrefix} ${srvIdx + 1}` };
                                 }
-                                seasons[selectedSeasonIdx].episodes[selectedEpisodeIdx].servers = servers;
+                                currEp[targetKey] = updatedList;
                                 setTvEditForm({ ...tvEditForm, seasons });
                               }}
-                              placeholder={server.input_type === 'embed' ? '<iframe src="..." ...></iframe>' : 'https://stream-url.com/embed/...'}
-                              className="w-full px-3 py-2 rounded-lg bg-dark-950 border border-white/10 text-white text-xs font-mono placeholder-dark-500 focus:outline-none focus:border-[#00ff73]"
+                              placeholder={server.input_type === 'embed' ? '<iframe src="..." ...></iframe>' : isVip ? 'Google Drive / Direct URL' : 'https://stream-url.com/embed/...'}
+                              className={`w-full px-3 py-2 rounded-lg bg-dark-950 border border-white/10 text-white text-xs font-mono placeholder-dark-500 focus:outline-none ${isVip ? 'focus:border-brand-400' : 'focus:border-[#00ff73]'}`}
                             />
                           </div>
                         );

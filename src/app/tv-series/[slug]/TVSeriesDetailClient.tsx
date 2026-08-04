@@ -21,7 +21,7 @@ const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
 export default function TVSeriesDetailClient({ series, relatedSeries, credits }: TVSeriesDetailClientProps) {
   const { user, openAuthModal } = useAuth();
   const router = useRouter();
-  const [watching, setWatching] = useState(false);
+  const [watchMode, setWatchMode] = useState<'free' | 'vip' | false>(false);
   const [showPricing, setShowPricing] = useState(false);
   const [hasVipAccess, setHasVipAccess] = useState(false);
 
@@ -72,7 +72,7 @@ export default function TVSeriesDetailClient({ series, relatedSeries, credits }:
   }, [user, series.id]);
 
   const handlePlayFree = () => {
-    setWatching(true);
+    setWatchMode('free');
   };
 
   const handlePlayVip = () => {
@@ -81,15 +81,15 @@ export default function TVSeriesDetailClient({ series, relatedSeries, credits }:
       return;
     }
     if (hasVipAccess) {
-      setWatching(true);
+      setWatchMode('vip');
     } else {
       setShowPricing(true);
     }
   };
 
   // If user clicked "Play", render full custom TV player UI
-  if (watching) {
-    return <WatchTVClient series={series} />;
+  if (watchMode) {
+    return <WatchTVClient series={series} initialMode={watchMode} />;
   }
 
   return (

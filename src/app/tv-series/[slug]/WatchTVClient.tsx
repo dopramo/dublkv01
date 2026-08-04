@@ -22,6 +22,7 @@ interface EpisodeData {
   description?: string;
   thumbnail_url?: string | null;
   servers: ServerOption[];
+  vip_servers?: ServerOption[];
   is_unreleased?: boolean;
 }
 
@@ -49,6 +50,7 @@ interface WatchTVClientProps {
       seasons?: SeasonData[];
     };
   };
+  initialMode?: 'free' | 'vip';
 }
 
 function extractSrcFromEmbed(input: string): string {
@@ -78,12 +80,13 @@ function getEmbedUrl(server: ServerOption | null): string {
   return url;
 }
 
-export default function WatchTVClient({ series }: WatchTVClientProps) {
+export default function WatchTVClient({ series, initialMode = 'free' }: WatchTVClientProps) {
   const { user, openAuthModal } = useAuth();
   const router = useRouter();
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const [showPricing, setShowPricing] = useState(false);
   const [hasVipAccess, setHasVipAccess] = useState(false);
+  const [streamMode, setStreamMode] = useState<'free' | 'vip'>(initialMode);
 
   // Check VIP access for current user
   useEffect(() => {
@@ -161,9 +164,14 @@ export default function WatchTVClient({ series }: WatchTVClientProps) {
     url: `https://vidsrc.me/embed/tv/${series.tmdb_id || 13278}/${currentSeason.season_number}/${currentEpisode?.episode_number || 1}`,
   }));
 
-  const episodeServers = currentEpisode?.servers && currentEpisode.servers.length > 0
-    ? currentEpisode.servers
-    : defaultServersForEp;
+  const episodeServers: ServerOption[] = (() => {
+    if (streamMode === 'vip') {
+      const vipList = (currentEpisode?.vip_servers || []).filter((s: ServerOption) => (s.embed_code && s.embed_code.trim()) || (s.url && s.url.trim()));
+      if (vipList.length > 0) return vipList;
+    }
+    const freeList = currentEpisode?.servers && currentEpisode.servers.length > 0 ? currentEpisode.servers : defaultServersForEp;
+    return freeList;
+  })();
 
   const currentServer = episodeServers[activeServerIdx] || episodeServers[0];
   const embedUrl = currentServer ? getEmbedUrl(currentServer) : null;
@@ -351,8 +359,10 @@ export default function WatchTVClient({ series }: WatchTVClientProps) {
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="px-5 py-2.5 rounded-xl bg-[#00ff73]/15 text-[#00ff73] border border-[#00ff73]/30 text-xs font-black tracking-wider uppercase">
-              {seriesStatus.toUpperCase() === 'COMPLETED' ? 'COMPLETED' : 'ONGOING'}
+            <span className={`px-5 py-2.5 rounded-xl text-xs font-black tracking-wider uppercase border ${
+              streamMode === 'vip' ? 'bg-purple-500/15 text-purple-300 border-purple-500/30' : 'bg-[#00ff73]/15 text-[#00ff73] border-[#00ff73]/30'
+            }`}>
+              {streamMode === 'vip' ? 'VIP UNLOCKED' : 'FREE MODE'}
             </span>
           </div>
         </div>
