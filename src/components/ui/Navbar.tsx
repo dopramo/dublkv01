@@ -35,11 +35,10 @@ export default function Navbar() {
   return (
     <>
       <nav
-        className={`fixed top-0 left-0 right-0 z-40 transition-colors duration-500 ${
-          scrolled
-            ? 'bg-dark-950/90 backdrop-blur-md border-b border-white/5 shadow-2xl'
-            : 'bg-gradient-to-b from-dark-950/80 to-transparent'
-        }`}
+        className={`fixed top-0 left-0 right-0 z-40 transition-colors duration-500 ${scrolled
+          ? 'bg-dark-950/90 backdrop-blur-md border-b border-white/5 shadow-2xl'
+          : 'bg-gradient-to-b from-dark-950/80 to-transparent'
+          }`}
         style={{ transform: 'translateZ(0)' }}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -49,10 +48,10 @@ export default function Navbar() {
             <Link href="/" className="flex items-center flex-shrink-0 mr-2 lg:mr-6">
               <Image
                 src="/logo.png"
-                alt="dubLK"
-                width={280}
-                height={80}
-                className="w-36 md:w-44 lg:w-56 h-auto object-contain"
+                alt="DubLK"
+                width={300}
+                height={94}
+                className="h-10 sm:h-12 md:h-13 lg:h-16 xl:h-18 w-auto object-contain transition-transform duration-200 hover:scale-[1.02]"
                 priority
               />
             </Link>
@@ -65,11 +64,10 @@ export default function Navbar() {
                   <Link
                     key={href}
                     href={href}
-                    className={`px-4 py-2 text-sm rounded-xl transition-all duration-200 ${
-                      isActive
-                        ? 'text-white bg-white/12 font-medium'
-                        : 'text-dark-300 hover:text-white hover:bg-white/6'
-                    }`}
+                    className={`px-4 py-2 text-sm rounded-xl transition-all duration-200 ${isActive
+                      ? 'text-white bg-white/12 font-medium'
+                      : 'text-dark-300 hover:text-white hover:bg-white/6'
+                      }`}
                   >
                     {label}
                   </Link>
@@ -78,11 +76,10 @@ export default function Navbar() {
               {canMaintain && (
                 <Link
                   href="/admin"
-                  className={`px-4 py-2 text-sm rounded-xl transition-all duration-200 ${
-                    pathname === '/admin'
-                      ? 'text-brand-300 bg-brand-500/20 font-medium'
-                      : 'text-brand-400 hover:text-brand-300 hover:bg-brand-500/8'
-                  }`}
+                  className={`px-4 py-2 text-sm rounded-xl transition-all duration-200 ${pathname === '/admin'
+                    ? 'text-brand-300 bg-brand-500/20 font-medium'
+                    : 'text-brand-400 hover:text-brand-300 hover:bg-brand-500/8'
+                    }`}
                 >
                   Admin
                 </Link>

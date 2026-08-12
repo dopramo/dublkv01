@@ -14,10 +14,10 @@ export default function Footer() {
             <div className="mb-4">
               <Image
                 src="/logo.png"
-                alt="dubLK"
-                width={145}
-                height={48}
-                className="h-15 w-auto object-contain"
+                alt="DubLK"
+                width={300}
+                height={94}
+                className="h-16 md:h-20 lg:h-24 w-auto object-contain"
               />
             </div>
             <p className="text-sm text-dark-400 max-w-sm leading-relaxed">
