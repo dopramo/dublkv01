@@ -8,6 +8,7 @@ import Footer from '@/components/ui/Footer';
 import AuthModal from '@/components/auth/AuthModal';
 import AuthCodeRedirect from '@/components/ui/AuthCodeRedirect';
 import CommunityModal from '@/components/ui/CommunityModal';
+import SecurityProtection from '@/components/ui/SecurityProtection';
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -69,6 +70,7 @@ export default function RootLayout({
             <Navbar />
             <AuthModal />
             <CommunityModal />
+            <SecurityProtection />
             <main className="flex-1 pb-20 md:pb-0">
               {children}
             </main>
