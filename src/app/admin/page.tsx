@@ -104,6 +104,9 @@ export default function AdminPage() {
   const [comingSoonList, setComingSoonList] = useState<ComingSoonAdminItem[]>([]);
   const [comingSoonSearch, setComingSoonSearch] = useState('');
   const [editingCSId, setEditingCSId] = useState<string | null>(null);
+  const [csTmdbSearch, setCsTmdbSearch] = useState('');
+  const [csTmdbResults, setCsTmdbResults] = useState<any[]>([]);
+  const [csTmdbLoading, setCsTmdbLoading] = useState(false);
   const [csForm, setCsForm] = useState<{
     title: string;
     type: 'movie' | 'tv';
@@ -868,6 +871,41 @@ export default function AdminPage() {
   };
 
   // Coming Soon Handlers
+  const handleCsTmdbSearch = async () => {
+    if (!csTmdbSearch.trim()) return;
+    setCsTmdbLoading(true);
+    try {
+      const res = await fetch(`/api/tmdb/search?q=${encodeURIComponent(csTmdbSearch)}`);
+      if (res.ok) {
+        const { results } = await res.json();
+        setCsTmdbResults(results || []);
+      }
+    } catch (err) {
+      console.error('Failed to search TMDB for coming soon:', err);
+    } finally {
+      setCsTmdbLoading(false);
+    }
+  };
+
+  const handleSelectTmdbForCS = (result: any) => {
+    const isTv = result.media_type === 'tv' || result.name !== undefined;
+    const title = result.name || result.title || '';
+    const poster_url = result.poster_path ? `https://image.tmdb.org/t/p/w500${result.poster_path}` : '';
+    const release_date = isTv
+      ? (result.first_air_date ? result.first_air_date.substring(0, 4) : 'Coming Soon')
+      : (result.release_date ? result.release_date.substring(0, 4) : 'Coming Soon');
+
+    setCsForm({
+      title,
+      type: isTv ? 'tv' : 'movie',
+      poster_url,
+      release_date,
+      description: result.overview || '',
+      rating: result.vote_average ? result.vote_average.toFixed(1) : '0',
+    });
+    setCsTmdbResults([]);
+    showToast(`Auto-filled details for "${title}" from TMDB!`, 'success');
+  };
   const handleCreateComingSoon = async () => {
     if (!csForm.title || !csForm.poster_url) {
       showToast('Title and Poster URL are required', 'error');
@@ -1767,22 +1805,97 @@ export default function AdminPage() {
         {showAddCSModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setShowAddCSModal(false)} />
-            <div className="relative w-full max-w-lg bg-dark-900 border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-10 animate-scale-in">
-              <div className="p-4 border-b border-white/10 flex items-center justify-between bg-dark-800/80">
+            <div className="relative w-full max-w-xl max-h-[90vh] overflow-y-auto bg-dark-900 border border-white/10 rounded-2xl shadow-2xl z-10 animate-scale-in flex flex-col">
+              <div className="p-4 border-b border-white/10 flex items-center justify-between bg-dark-800/80 sticky top-0 z-20">
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
                   <span>⏳ Add Coming Soon Item</span>
                 </h3>
                 <button onClick={() => setShowAddCSModal(false)} className="text-dark-400 hover:text-white p-2">✕</button>
               </div>
 
-              <div className="p-6 space-y-4">
+              <div className="p-6 space-y-5 flex-1">
+                {/* TMDB API Auto-Search Box */}
+                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>🎬 Search TMDB API (Auto-Fill)</span>
+                    </span>
+                    <span className="text-[10px] text-amber-400/80">No manual links needed</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={csTmdbSearch}
+                      onChange={(e) => setCsTmdbSearch(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleCsTmdbSearch()}
+                      placeholder="Type movie or TV series title (e.g. Avatar 3)..."
+                      className="flex-1 px-3.5 py-2 rounded-xl bg-dark-950/80 border border-white/10 text-white text-xs placeholder-dark-500 focus:outline-none focus:border-amber-400"
+                    />
+                    <button
+                      onClick={handleCsTmdbSearch}
+                      disabled={csTmdbLoading}
+                      className="px-4 py-2 rounded-xl bg-amber-500 text-black text-xs font-bold hover:bg-amber-400 transition-colors disabled:opacity-50"
+                    >
+                      {csTmdbLoading ? 'Searching...' : 'Search TMDB'}
+                    </button>
+                  </div>
+
+                  {/* TMDB Search Results Dropdown/List */}
+                  {csTmdbResults.length > 0 && (
+                    <div className="max-h-52 overflow-y-auto space-y-1.5 pt-2 border-t border-amber-500/20">
+                      {csTmdbResults.map((res: any) => {
+                        const isTV = res.media_type === 'tv' || res.name !== undefined;
+                        const resTitle = res.name || res.title;
+                        const resYear = isTV ? res.first_air_date?.substring(0, 4) : res.release_date?.substring(0, 4);
+
+                        return (
+                          <div
+                            key={res.id}
+                            className="p-2.5 rounded-lg bg-dark-900/90 border border-white/5 hover:border-amber-500/40 flex items-center justify-between gap-3"
+                          >
+                            <div className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer" onClick={() => handleSelectTmdbForCS(res)}>
+                              {res.poster_path ? (
+                                <img src={`https://image.tmdb.org/t/p/w92${res.poster_path}`} alt="" className="w-8 h-11 rounded object-cover flex-shrink-0" />
+                              ) : (
+                                <div className="w-8 h-11 rounded bg-dark-800 flex items-center justify-center text-[8px] text-dark-500 flex-shrink-0">No Img</div>
+                              )}
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-white truncate">{resTitle}</p>
+                                <p className="text-[10px] text-dark-400">{resYear || 'Upcoming'} • ⭐ {res.vote_average?.toFixed(1) || '0'}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              <button
+                                onClick={() => handleSelectTmdbForCS(res)}
+                                className="px-2.5 py-1 rounded bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 text-[10px] font-bold border border-amber-500/30"
+                              >
+                                ⚡ Auto-Fill
+                              </button>
+                              <button
+                                onClick={() => {
+                                  handleImportTmdbToComingSoon(res);
+                                  setShowAddCSModal(false);
+                                }}
+                                className="px-2.5 py-1 rounded bg-amber-500 text-black hover:bg-amber-400 text-[10px] font-extrabold"
+                              >
+                                🚀 1-Click Add
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Form Fields (Pre-populated from TMDB or Manual) */}
                 <div>
                   <label className="block text-xs font-bold text-dark-300 uppercase mb-1">Title *</label>
                   <input
                     type="text"
                     value={csForm.title}
                     onChange={(e) => setCsForm({ ...csForm, title: e.target.value })}
-                    placeholder="e.g. Deadpool & Wolverine"
+                    placeholder="Title will auto-fill from TMDB above or enter manually..."
                     className="w-full px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-amber-500"
                   />
                 </div>
@@ -1805,7 +1918,7 @@ export default function AdminPage() {
                       type="text"
                       value={csForm.release_date}
                       onChange={(e) => setCsForm({ ...csForm, release_date: e.target.value })}
-                      placeholder="e.g. Coming Dec 2026"
+                      placeholder="e.g. 2026 or Coming Dec 2026"
                       className="w-full px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-amber-500"
                     />
                   </div>
@@ -1817,8 +1930,8 @@ export default function AdminPage() {
                     type="text"
                     value={csForm.poster_url}
                     onChange={(e) => setCsForm({ ...csForm, poster_url: e.target.value })}
-                    placeholder="https://image.tmdb.org/t/p/w500/..."
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-amber-500"
+                    placeholder="Auto-filled from TMDB above or paste URL..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-amber-500 font-mono text-xs"
                   />
                 </div>
 
@@ -1828,13 +1941,13 @@ export default function AdminPage() {
                     value={csForm.description}
                     onChange={(e) => setCsForm({ ...csForm, description: e.target.value })}
                     rows={3}
-                    placeholder="Short description or synopsis..."
+                    placeholder="Auto-filled from TMDB above or type short synopsis..."
                     className="w-full px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-amber-500"
                   />
                 </div>
               </div>
 
-              <div className="p-4 border-t border-white/10 bg-dark-800/80 flex items-center justify-end gap-3">
+              <div className="p-4 border-t border-white/10 bg-dark-800/80 flex items-center justify-end gap-3 sticky bottom-0 z-20">
                 <button
                   onClick={() => setShowAddCSModal(false)}
                   className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-medium"
