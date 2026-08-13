@@ -164,3 +164,37 @@ CREATE POLICY "Admins can view payment proofs"
       WHERE profiles.id = auth.uid() AND profiles.is_admin = true
     )
   );
+
+-- ============================================
+-- Coming Soon Table
+-- ============================================
+CREATE TABLE IF NOT EXISTS public.coming_soon (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  title TEXT NOT NULL,
+  type TEXT CHECK (type IN ('movie', 'tv')) DEFAULT 'movie',
+  poster_url TEXT NOT NULL,
+  backdrop_url TEXT,
+  description TEXT,
+  release_date TEXT,
+  genres TEXT[] DEFAULT '{}',
+  rating NUMERIC(3,1) DEFAULT 0,
+  tmdb_id INTEGER,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.coming_soon ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Public coming_soon items are viewable by everyone"
+  ON public.coming_soon FOR SELECT
+  USING (true);
+
+CREATE POLICY "Admins can do everything with coming_soon"
+  ON public.coming_soon FOR ALL
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE profiles.id = auth.uid() AND (profiles.is_admin = true OR profiles.role IN ('admin', 'editor', 'moderator'))
+    )
+  );
+

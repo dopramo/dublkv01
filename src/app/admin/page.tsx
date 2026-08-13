@@ -76,7 +76,22 @@ interface UserProfile {
   purchases: Purchase[];
 }
 
-type Tab = 'movies' | 'tv_series' | 'payments' | 'users' | 'add';
+interface ComingSoonAdminItem {
+  id: string;
+  title: string;
+  type: 'movie' | 'tv';
+  poster_url: string;
+  backdrop_url?: string | null;
+  description?: string | null;
+  release_date?: string | null;
+  genres?: string[];
+  rating?: number;
+  tmdb_id?: number | null;
+  created_at: string;
+  updated_at?: string;
+}
+
+type Tab = 'movies' | 'tv_series' | 'coming_soon' | 'payments' | 'users' | 'add';
 
 export default function AdminPage() {
   const { user, isAdmin, canMaintain, isLoading } = useAuth();
@@ -86,6 +101,18 @@ export default function AdminPage() {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [comingSoonList, setComingSoonList] = useState<ComingSoonAdminItem[]>([]);
+  const [comingSoonSearch, setComingSoonSearch] = useState('');
+  const [editingCSId, setEditingCSId] = useState<string | null>(null);
+  const [csForm, setCsForm] = useState<{
+    title: string;
+    type: 'movie' | 'tv';
+    poster_url: string;
+    release_date: string;
+    description: string;
+    rating: string;
+  }>({ title: '', type: 'movie', poster_url: '', release_date: 'Coming Soon', description: '', rating: '0' });
+  const [showAddCSModal, setShowAddCSModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
@@ -158,9 +185,10 @@ export default function AdminPage() {
 
       setLoading(true);
       try {
-        const [moviesRes, paymentsRes] = await Promise.all([
+        const [moviesRes, paymentsRes, csRes] = await Promise.all([
           fetch('/api/admin/movies'),
           fetch('/api/payments/verify?status=all'),
+          fetch('/api/admin/coming-soon'),
         ]);
 
         if (moviesRes.ok) {
@@ -170,6 +198,10 @@ export default function AdminPage() {
         if (paymentsRes.ok) {
           const { purchases } = await paymentsRes.json();
           setPurchases(purchases || []);
+        }
+        if (csRes.ok) {
+          const { comingSoon } = await csRes.json();
+          setComingSoonList(comingSoon || []);
         }
       } catch (err) {
         console.error('Failed to fetch admin data:', err);
@@ -835,6 +867,135 @@ export default function AdminPage() {
     }
   };
 
+  // Coming Soon Handlers
+  const handleCreateComingSoon = async () => {
+    if (!csForm.title || !csForm.poster_url) {
+      showToast('Title and Poster URL are required', 'error');
+      return;
+    }
+    setActionLoading('cs-create');
+    try {
+      const res = await fetch('/api/admin/coming-soon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: csForm.title,
+          type: csForm.type,
+          poster_url: csForm.poster_url,
+          release_date: csForm.release_date || 'Coming Soon',
+          description: csForm.description,
+          rating: parseFloat(csForm.rating) || 0,
+        }),
+      });
+      if (res.ok) {
+        const { comingSoon } = await res.json();
+        setComingSoonList((prev) => [comingSoon, ...prev]);
+        setShowAddCSModal(false);
+        setCsForm({ title: '', type: 'movie', poster_url: '', release_date: 'Coming Soon', description: '', rating: '0' });
+        showToast('Coming Soon item added!', 'success');
+      } else {
+        const { error } = await res.json();
+        showToast(`Failed: ${error}`, 'error');
+      }
+    } catch (err: any) {
+      showToast(`Error: ${err.message}`, 'error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleImportTmdbToComingSoon = async (tmdbItem: any) => {
+    setActionLoading(`cs-import-${tmdbItem.id}`);
+    try {
+      const isTv = tmdbItem.media_type === 'tv';
+      const title = tmdbItem.title || tmdbItem.name || 'Untitled';
+      const poster_url = tmdbItem.poster_path
+        ? `https://image.tmdb.org/t/p/w500${tmdbItem.poster_path}`
+        : '';
+      const backdrop_url = tmdbItem.backdrop_path
+        ? `https://image.tmdb.org/t/p/original${tmdbItem.backdrop_path}`
+        : '';
+      const release_date = isTv
+        ? (tmdbItem.first_air_date ? tmdbItem.first_air_date.substring(0, 4) : 'Coming Soon')
+        : (tmdbItem.release_date ? tmdbItem.release_date.substring(0, 4) : 'Coming Soon');
+
+      const res = await fetch('/api/admin/coming-soon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tmdb_id: tmdbItem.id,
+          title,
+          type: isTv ? 'tv' : 'movie',
+          poster_url,
+          backdrop_url,
+          description: tmdbItem.overview || '',
+          release_date,
+          rating: tmdbItem.vote_average || 0,
+        }),
+      });
+
+      if (res.ok) {
+        const { comingSoon } = await res.json();
+        setComingSoonList((prev) => [comingSoon, ...prev]);
+        showToast(`"${title}" added to Coming Soon!`, 'success');
+      } else {
+        const { error } = await res.json();
+        showToast(`Failed to add: ${error}`, 'error');
+      }
+    } catch (err: any) {
+      showToast(`Error: ${err.message}`, 'error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleUpdateComingSoon = async (id: string, updates: Partial<ComingSoonAdminItem>) => {
+    setActionLoading(`cs-update-${id}`);
+    try {
+      const res = await fetch('/api/admin/coming-soon', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...updates }),
+      });
+      if (res.ok) {
+        const { comingSoon } = await res.json();
+        setComingSoonList((prev) => prev.map((item) => (item.id === id ? comingSoon : item)));
+        setEditingCSId(null);
+        showToast('Coming Soon item updated!', 'success');
+      } else {
+        const { error } = await res.json();
+        showToast(`Update failed: ${error}`, 'error');
+      }
+    } catch (err: any) {
+      showToast(`Update error: ${err.message}`, 'error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDeleteComingSoon = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this Coming Soon item?')) return;
+    setActionLoading(`cs-delete-${id}`);
+    try {
+      const res = await fetch('/api/admin/coming-soon', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      if (res.ok) {
+        setComingSoonList((prev) => prev.filter((item) => item.id !== id));
+        showToast('Coming Soon item deleted', 'success');
+      } else {
+        const { error } = await res.json();
+        showToast(`Delete failed: ${error}`, 'error');
+      }
+    } catch (err: any) {
+      showToast(`Delete error: ${err.message}`, 'error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   if (isLoading || loading || !canMaintain) {
     return (
       <div className="pt-32 flex justify-center">
@@ -879,7 +1040,7 @@ export default function AdminPage() {
 
         {/* Tabs */}
         <div className="flex gap-1 p-1 rounded-xl bg-dark-800/50 border border-white/5 mb-8 w-fit flex-wrap">
-          {(['movies', 'tv_series', 'payments', 'users', 'add'] as Tab[]).map((t) => (
+          {(['movies', 'tv_series', 'coming_soon', 'payments', 'users', 'add'] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -891,6 +1052,7 @@ export default function AdminPage() {
             >
               {t === 'movies' && `🎬 Movies (${moviesList.length})`}
               {t === 'tv_series' && `📺 TV Series (${tvSeriesList.length})`}
+              {t === 'coming_soon' && `⏳ Coming Soon (${comingSoonList.length})`}
               {t === 'payments' && `💳 Payments (${purchases.length})`}
               {t === 'users' && `👥 Users${users.length > 0 ? ` (${users.length})` : ''}`}
               {t === 'add' && '➕ Add Media'}
@@ -1508,6 +1670,189 @@ export default function AdminPage() {
           </div>
         )}
 
+        {/* COMING SOON TAB */}
+        {tab === 'coming_soon' && (
+          <div className="space-y-6 animate-fade-in">
+            {/* Action Bar */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-dark-900/60 p-4 rounded-2xl border border-white/10">
+              <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 w-full sm:w-80">
+                <svg className="w-4 h-4 text-dark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  value={comingSoonSearch}
+                  onChange={(e) => setComingSoonSearch(e.target.value)}
+                  placeholder="Search coming soon items..."
+                  className="w-full bg-transparent text-white text-sm placeholder-dark-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-center gap-3 w-full sm:w-auto">
+                <button
+                  onClick={() => setShowAddCSModal(true)}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-bold text-sm shadow-lg shadow-amber-500/20 transition-all flex items-center gap-2"
+                >
+                  <span>➕ Add Coming Soon Item</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Coming Soon List */}
+            {comingSoonList.filter(item => item.title.toLowerCase().includes(comingSoonSearch.toLowerCase())).length === 0 ? (
+              <div className="text-center py-16 rounded-2xl bg-dark-900/40 border border-white/5 p-8">
+                <div className="text-4xl mb-3">⏳</div>
+                <h3 className="text-lg font-bold text-white mb-1">No Coming Soon Items</h3>
+                <p className="text-dark-400 text-sm max-w-md mx-auto mb-6">
+                  Add movies or TV series to the Coming Soon section. They will appear on the homepage directly below Recently Added Movies.
+                </p>
+                <button
+                  onClick={() => setShowAddCSModal(true)}
+                  className="px-6 py-2.5 rounded-xl bg-amber-500 text-black font-bold text-sm hover:bg-amber-400 transition-colors"
+                >
+                  Add Your First Coming Soon Item
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {comingSoonList
+                  .filter(item => item.title.toLowerCase().includes(comingSoonSearch.toLowerCase()))
+                  .map((item) => (
+                    <div key={item.id} className="p-4 rounded-2xl bg-dark-900/60 border border-white/10 hover:border-amber-500/30 transition-all flex gap-4">
+                      {/* Poster */}
+                      <div className="w-20 h-28 rounded-xl bg-dark-800 overflow-hidden flex-shrink-0 relative border border-white/10">
+                        {item.poster_url ? (
+                          <img src={item.poster_url} alt={item.title} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-xs text-dark-500">No Image</div>
+                        )}
+                        <span className={`absolute top-1 left-1 px-1.5 py-0.5 text-[8px] font-extrabold rounded uppercase ${
+                          item.type === 'tv' ? 'bg-purple-500 text-white' : 'bg-blue-500 text-white'
+                        }`}>
+                          {item.type === 'tv' ? 'TV' : 'Movie'}
+                        </span>
+                      </div>
+
+                      {/* Content */}
+                      <div className="flex-1 min-w-0 flex flex-col justify-between">
+                        <div>
+                          <h4 className="text-sm font-bold text-white truncate">{item.title}</h4>
+                          <p className="text-xs text-amber-400 font-medium mt-0.5 flex items-center gap-1">
+                            <span>📅</span>
+                            <span>{item.release_date || 'Coming Soon'}</span>
+                          </p>
+                          {item.description && (
+                            <p className="text-xs text-dark-400 mt-1 line-clamp-2 leading-relaxed">{item.description}</p>
+                          )}
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-2 mt-3 pt-2 border-t border-white/5">
+                          <button
+                            onClick={() => handleDeleteComingSoon(item.id)}
+                            className="px-3 py-1 rounded-lg text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 font-medium transition-colors"
+                          >
+                            🗑️ Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ADD COMING SOON MODAL */}
+        {showAddCSModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setShowAddCSModal(false)} />
+            <div className="relative w-full max-w-lg bg-dark-900 border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-10 animate-scale-in">
+              <div className="p-4 border-b border-white/10 flex items-center justify-between bg-dark-800/80">
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <span>⏳ Add Coming Soon Item</span>
+                </h3>
+                <button onClick={() => setShowAddCSModal(false)} className="text-dark-400 hover:text-white p-2">✕</button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-dark-300 uppercase mb-1">Title *</label>
+                  <input
+                    type="text"
+                    value={csForm.title}
+                    onChange={(e) => setCsForm({ ...csForm, title: e.target.value })}
+                    placeholder="e.g. Deadpool & Wolverine"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-dark-300 uppercase mb-1">Type</label>
+                    <select
+                      value={csForm.type}
+                      onChange={(e) => setCsForm({ ...csForm, type: e.target.value as any })}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-dark-800 border border-white/10 text-white text-sm focus:outline-none cursor-pointer"
+                    >
+                      <option value="movie">🎬 Movie</option>
+                      <option value="tv">📺 TV Series</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-dark-300 uppercase mb-1">Release Date / Note</label>
+                    <input
+                      type="text"
+                      value={csForm.release_date}
+                      onChange={(e) => setCsForm({ ...csForm, release_date: e.target.value })}
+                      placeholder="e.g. Coming Dec 2026"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-dark-300 uppercase mb-1">Poster Image URL *</label>
+                  <input
+                    type="text"
+                    value={csForm.poster_url}
+                    onChange={(e) => setCsForm({ ...csForm, poster_url: e.target.value })}
+                    placeholder="https://image.tmdb.org/t/p/w500/..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-dark-300 uppercase mb-1">Description (Optional)</label>
+                  <textarea
+                    value={csForm.description}
+                    onChange={(e) => setCsForm({ ...csForm, description: e.target.value })}
+                    rows={3}
+                    placeholder="Short description or synopsis..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+              </div>
+
+              <div className="p-4 border-t border-white/10 bg-dark-800/80 flex items-center justify-end gap-3">
+                <button
+                  onClick={() => setShowAddCSModal(false)}
+                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateComingSoon}
+                  disabled={actionLoading === 'cs-create'}
+                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs shadow-lg shadow-amber-500/20"
+                >
+                  {actionLoading === 'cs-create' ? 'Adding...' : 'Add Coming Soon Item'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* PAYMENTS TAB */}
         {tab === 'payments' && (
           <div className="space-y-6 animate-fade-in">
@@ -2075,20 +2420,37 @@ export default function AdminPage() {
                     return (
                       <button
                         key={result.id}
-                        onClick={() => setSelectedTmdb(result)}
-                        className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-white/5 text-left"
+                        className="w-full flex items-center justify-between gap-3 p-3 rounded-lg hover:bg-white/5 text-left"
                       >
-                        {result.poster_path && (
-                          <img src={`https://image.tmdb.org/t/p/w92${result.poster_path}`} alt="" className="w-10 h-14 rounded object-cover" />
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-semibold text-white truncate">{result.name || result.title}</p>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${isTV ? 'bg-[#00ff73]/20 text-[#00ff73]' : 'bg-brand-500/20 text-brand-300'}`}>
-                              {isTV ? 'TV' : 'MOVIE'}
-                            </span>
+                        <div className="flex items-center gap-3 min-w-0 flex-1" onClick={() => setSelectedTmdb(result)}>
+                          {result.poster_path && (
+                            <img src={`https://image.tmdb.org/t/p/w92${result.poster_path}`} alt="" className="w-10 h-14 rounded object-cover flex-shrink-0" />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-semibold text-white truncate">{result.name || result.title}</p>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${isTV ? 'bg-[#00ff73]/20 text-[#00ff73]' : 'bg-brand-500/20 text-brand-300'}`}>
+                                {isTV ? 'TV' : 'MOVIE'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-dark-500">⭐ {result.vote_average?.toFixed(1)}</p>
                           </div>
-                          <p className="text-xs text-dark-500">⭐ {result.vote_average?.toFixed(1)}</p>
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <button
+                            onClick={() => setSelectedTmdb(result)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-brand-600 hover:bg-brand-500 text-white"
+                          >
+                            + Catalog
+                          </button>
+                          <button
+                            onClick={() => handleImportTmdbToComingSoon(result)}
+                            disabled={actionLoading === `cs-import-${result.id}`}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30"
+                          >
+                            ⏳ Coming Soon
+                          </button>
                         </div>
                       </button>
                     );

@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import HomeClient from '@/app/HomeClient';
 import MovieRow from '@/components/ui/MovieRow';
 import TVSeriesRow from '@/components/ui/TVSeriesRow';
+import ComingSoonRow from '@/components/ui/ComingSoonRow';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -28,8 +29,29 @@ async function getMediaItems() {
   return sorted;
 }
 
+async function getComingSoonItems() {
+  try {
+    const supabase = createAdminClient();
+    const { data: items, error } = await supabase
+      .from('coming_soon')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      return [];
+    }
+
+    return items || [];
+  } catch {
+    return [];
+  }
+}
+
 export default async function HomePage() {
-  const allMedia = await getMediaItems();
+  const [allMedia, comingSoonItems] = await Promise.all([
+    getMediaItems(),
+    getComingSoonItems(),
+  ]);
 
   // Separate Movies vs TV Series
   const movies = allMedia.filter(m => !m.free_servers?.is_tv);
@@ -65,6 +87,7 @@ export default async function HomePage() {
       {/* Rows in exact requested order */}
       <div className="relative mt-4 sm:-mt-6 lg:-mt-12 z-10 space-y-8 sm:space-y-10 pb-16">
         <MovieRow title="Recently Added Movies" movies={recentlyAddedMovies} icon="🎬" />
+        <ComingSoonRow comingSoonItems={comingSoonItems} title="Coming Soon" icon="⏳" />
         <TVSeriesRow title="Recently Added Tv series" seriesList={recentlyAddedTVSeries} icon="📺" />
         <MovieRow title="Top Rated Movies" movies={topRatedMovies} icon="⭐" />
         <TVSeriesRow title="Top Rated Tv series" seriesList={topRatedTVSeries} icon="🔥" />
