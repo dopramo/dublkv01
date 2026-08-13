@@ -95,6 +95,11 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (error) {
+    if (error.message?.includes('schema cache') || error.message?.includes('coming_soon')) {
+      return NextResponse.json({
+        error: "Database table 'coming_soon' not found in Supabase. Please run the SQL query in Supabase SQL Editor."
+      }, { status: 500 });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
