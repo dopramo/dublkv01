@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 
@@ -18,6 +19,8 @@ interface MovieCardProps {
 }
 
 export default function MovieCard({ movie, fill = false }: MovieCardProps) {
+  const [imgSrc, setImgSrc] = useState(movie.poster_url || '/placeholder-poster.jpg');
+
   return (
     <Link
       href={`/movies/${movie.slug}`}
@@ -31,9 +34,11 @@ export default function MovieCard({ movie, fill = false }: MovieCardProps) {
       >
         {/* Image */}
         <Image
-          src={movie.poster_url || '/placeholder-poster.jpg'}
+          src={imgSrc}
           alt={movie.title}
           fill
+          unoptimized
+          onError={() => setImgSrc('/placeholder-poster.jpg')}
           className="object-cover transition-transform duration-700 group-hover:scale-110"
           sizes={fill ? '(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 14vw' : '160px'}
           style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}

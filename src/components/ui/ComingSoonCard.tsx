@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Image from 'next/image';
 
 export interface ComingSoonItem {
@@ -21,6 +22,7 @@ interface ComingSoonCardProps {
 }
 
 export default function ComingSoonCard({ item, fill = false }: ComingSoonCardProps) {
+  const [imgSrc, setImgSrc] = useState(item.poster_url || '/placeholder-poster.jpg');
   const isTv = item.type === 'tv';
 
   return (
@@ -35,10 +37,11 @@ export default function ComingSoonCard({ item, fill = false }: ComingSoonCardPro
       >
         {/* Poster Image */}
         <Image
-          src={item.poster_url || '/placeholder-poster.jpg'}
+          src={imgSrc}
           alt={item.title}
           fill
           unoptimized
+          onError={() => setImgSrc('/placeholder-poster.jpg')}
           className="object-cover filter brightness-[0.9] group-hover:brightness-100 transition-all duration-700 group-hover:scale-105"
           sizes={fill ? '(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 14vw' : '160px'}
           style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}

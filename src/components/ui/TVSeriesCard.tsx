@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 
@@ -21,6 +22,7 @@ interface TVSeriesCardProps {
 }
 
 export default function TVSeriesCard({ series, fill = false }: TVSeriesCardProps) {
+  const [imgSrc, setImgSrc] = useState(series.poster_url || '/placeholder-poster.jpg');
   const isCompleted = series.free_servers?.status === 'Completed' || true;
 
   return (
@@ -36,9 +38,11 @@ export default function TVSeriesCard({ series, fill = false }: TVSeriesCardProps
       >
         {/* Image */}
         <Image
-          src={series.poster_url || '/placeholder-poster.jpg'}
+          src={imgSrc}
           alt={series.title}
           fill
+          unoptimized
+          onError={() => setImgSrc('/placeholder-poster.jpg')}
           className="object-cover transition-transform duration-700 group-hover:scale-110"
           sizes={fill ? '(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 14vw' : '160px'}
           style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}

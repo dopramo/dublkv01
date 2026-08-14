@@ -54,6 +54,7 @@ export default function HeroBanner({ movies }: HeroBannerProps) {
             src={movie.backdrop_url}
             alt={movie.title}
             fill
+            unoptimized
             className="object-cover object-center"
             priority
             sizes="100vw"

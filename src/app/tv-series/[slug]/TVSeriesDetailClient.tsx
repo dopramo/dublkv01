@@ -18,6 +18,36 @@ interface TVSeriesDetailClientProps {
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
 
+function PersonAvatarImage({ path, name, size = 'w185' }: { path: string | null; name: string; size?: string }) {
+  const [imgError, setImgError] = useState(false);
+
+  if (!path || imgError) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-dark-800">
+        <svg className="w-6 h-6 text-dark-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
+      </div>
+    );
+  }
+
+  const src = path.startsWith('http://') || path.startsWith('https://')
+    ? path
+    : `${TMDB_IMAGE_BASE}/${size}${path.startsWith('/') ? path : `/${path}`}`;
+
+  return (
+    <Image
+      src={src}
+      alt={name}
+      fill
+      unoptimized
+      onError={() => setImgError(true)}
+      className="object-cover rounded-full"
+      sizes="80px"
+    />
+  );
+}
+
 export default function TVSeriesDetailClient({ series, relatedSeries, credits }: TVSeriesDetailClientProps) {
   const { user, openAuthModal } = useAuth();
   const router = useRouter();
@@ -220,21 +250,7 @@ export default function TVSeriesDetailClient({ series, relatedSeries, credits }:
                         >
                           <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-emerald-500/30 to-brand-500/30 p-[2px] group-hover:from-emerald-400 group-hover:to-brand-400 transition-all duration-300">
                             <div className="w-full h-full rounded-full overflow-hidden bg-dark-800">
-                              {person.profile_path ? (
-                                <Image
-                                  src={`${TMDB_IMAGE_BASE}/w185${person.profile_path}`}
-                                  alt={person.name}
-                                  fill
-                                  className="object-cover rounded-full"
-                                  sizes="80px"
-                                />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center">
-                                  <svg className="w-8 h-8 text-dark-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                  </svg>
-                                </div>
-                              )}
+                              <PersonAvatarImage path={person.profile_path} name={person.name} size="w185" />
                             </div>
                           </div>
                         </div>
@@ -265,21 +281,7 @@ export default function TVSeriesDetailClient({ series, relatedSeries, credits }:
                         >
                           <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-emerald-500/30 to-brand-500/30 p-[2px] group-hover:from-emerald-400 group-hover:to-brand-400 transition-all duration-300">
                             <div className="w-full h-full rounded-full overflow-hidden bg-dark-800">
-                              {person.profile_path ? (
-                                <Image
-                                  src={`${TMDB_IMAGE_BASE}/w45${person.profile_path}`}
-                                  alt={person.name}
-                                  width={32}
-                                  height={32}
-                                  className="object-cover w-full h-full rounded-full"
-                                />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center bg-dark-700">
-                                  <svg className="w-4 h-4 text-dark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                  </svg>
-                                </div>
-                              )}
+                              <PersonAvatarImage path={person.profile_path} name={person.name} size="w45" />
                             </div>
                           </div>
                         </div>
