@@ -3,6 +3,7 @@ import HomeClient from '@/app/HomeClient';
 import MovieRow from '@/components/ui/MovieRow';
 import TVSeriesRow from '@/components/ui/TVSeriesRow';
 import ComingSoonRow from '@/components/ui/ComingSoonRow';
+import MediaRow from '@/components/ui/MediaRow';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -57,6 +58,10 @@ export default async function HomePage() {
   const movies = allMedia.filter(m => !m.free_servers?.is_tv);
   const tvSeries = allMedia.filter(m => m.free_servers?.is_tv);
 
+  // Separate Coming Soon Movies vs TV Series
+  const comingSoonMovies = comingSoonItems.filter(item => item.type !== 'tv');
+  const comingSoonTVSeries = comingSoonItems.filter(item => item.type === 'tv');
+
   // Hero banner uses top rated items (movies or tv) with backdrops
   const heroMovies = [...allMedia]
     .filter((m) => m.backdrop_url)
@@ -66,16 +71,17 @@ export default async function HomePage() {
   // 1. Recently Added Movies
   const recentlyAddedMovies = movies.slice(0, 20);
 
-  // 2. Recently Added Tv series
+  // 2. Coming Soon Movies
+  const comingSoonMoviesList = comingSoonMovies.slice(0, 20);
+
+  // 3. Recently Added TV series
   const recentlyAddedTVSeries = tvSeries.slice(0, 20);
 
-  // 3. Top Rated Movies
-  const topRatedMovies = [...movies]
-    .sort((a, b) => (b.rating || 0) - (a.rating || 0))
-    .slice(0, 20);
+  // 4. Coming Soon TV series
+  const comingSoonTVSeriesList = comingSoonTVSeries.slice(0, 20);
 
-  // 4. Top Rated Tv series
-  const topRatedTVSeries = [...tvSeries]
+  // 5. Top Rated ( film + tv series )
+  const topRatedMedia = [...allMedia]
     .sort((a, b) => (b.rating || 0) - (a.rating || 0))
     .slice(0, 20);
 
@@ -86,11 +92,20 @@ export default async function HomePage() {
 
       {/* Rows in exact requested order */}
       <div className="relative mt-4 sm:-mt-6 lg:-mt-12 z-10 space-y-8 sm:space-y-10 pb-16">
+        {/* 1 Recently added movies */}
         <MovieRow title="Recently Added Movies" movies={recentlyAddedMovies} icon="🎬" />
-        <ComingSoonRow comingSoonItems={comingSoonItems} title="Coming Soon" icon="⏳" />
-        <TVSeriesRow title="Recently Added Tv series" seriesList={recentlyAddedTVSeries} icon="📺" />
-        <MovieRow title="Top Rated Movies" movies={topRatedMovies} icon="⭐" />
-        <TVSeriesRow title="Top Rated Tv series" seriesList={topRatedTVSeries} icon="🔥" />
+
+        {/* 2 Coming soon movies */}
+        <ComingSoonRow title="Coming Soon Movies" comingSoonItems={comingSoonMoviesList} icon="⏳" />
+
+        {/* 3 Recently added tv series */}
+        <TVSeriesRow title="Recently Added TV Series" seriesList={recentlyAddedTVSeries} icon="📺" />
+
+        {/* 4 Coming soon tv series */}
+        <ComingSoonRow title="Coming Soon TV Series" comingSoonItems={comingSoonTVSeriesList} icon="⏳" />
+
+        {/* 5 Top rated ( film + tv series ) */}
+        <MediaRow title="Top Rated" items={topRatedMedia} icon="⭐" />
       </div>
     </div>
   );

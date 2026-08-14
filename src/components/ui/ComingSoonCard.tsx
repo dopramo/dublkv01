@@ -69,13 +69,11 @@ export default function ComingSoonCard({ item, fill = false }: ComingSoonCardPro
           ) : null}
         </div>
 
-        {/* Center / Bottom Glowing "COMING SOON" Banner */}
-        <div className="absolute inset-x-0 bottom-3 px-2 z-10">
-          <div className="w-full py-1.5 px-2 bg-gradient-to-r from-brand-600/90 via-brand-500/90 to-amber-500/90 backdrop-blur-md rounded-lg border border-white/20 text-center shadow-lg shadow-brand-500/30 transform group-hover:scale-102 transition-transform duration-300">
-            <span className="block text-[11px] font-black tracking-widest text-white uppercase drop-shadow-md">
-              Coming Soon
-            </span>
-          </div>
+        {/* Bottom "Coming Soon" Text */}
+        <div className="absolute inset-x-0 bottom-2.5 px-2 z-10 text-center">
+          <span className="text-[11px] font-black tracking-widest text-amber-400 uppercase drop-shadow-lg">
+            Coming Soon
+          </span>
         </div>
       </div>
 
