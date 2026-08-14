@@ -70,8 +70,8 @@ export default function ComingSoonCard({ item, fill = false }: ComingSoonCardPro
         </div>
 
         {/* Bottom "Coming Soon" Text (Plain text only, no button container) */}
-        <div className="absolute inset-x-0 bottom-2.5 px-2 z-10 text-center pointer-events-none">
-          <span className="text-[11px] font-black tracking-widest text-amber-400 uppercase drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
+        <div className="absolute inset-x-0 bottom-6 px-2 z-10 text-center pointer-events-none">
+          <span className="text-[11px] font-black tracking-widest text-red-500 uppercase drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
             Coming Soon
           </span>
         </div>
@@ -82,7 +82,7 @@ export default function ComingSoonCard({ item, fill = false }: ComingSoonCardPro
         <h3 className="text-xs font-semibold text-dark-100 line-clamp-1 leading-snug">
           {item.title}
         </h3>
-        <p className="text-[10px] text-amber-400/90 font-medium mt-0.5 flex items-center gap-1">
+        <p className="text-[10px] text-red-400/90 font-medium mt-0.5 flex items-center gap-1">
           <span>📅</span>
           <span className="truncate">{item.release_date || 'Coming Soon'}</span>
         </p>
