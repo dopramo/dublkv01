@@ -69,9 +69,9 @@ export default function ComingSoonCard({ item, fill = false }: ComingSoonCardPro
           ) : null}
         </div>
 
-        {/* Bottom "Coming Soon" Text */}
-        <div className="absolute inset-x-0 bottom-2.5 px-2 z-10 text-center">
-          <span className="text-[11px] font-black tracking-widest text-amber-400 uppercase drop-shadow-lg">
+        {/* Bottom "Coming Soon" Text (Plain text only, no button container) */}
+        <div className="absolute inset-x-0 bottom-2.5 px-2 z-10 text-center pointer-events-none">
+          <span className="text-[11px] font-black tracking-widest text-amber-400 uppercase drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
             Coming Soon
           </span>
         </div>
