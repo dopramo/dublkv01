@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 
 export default function CommunityModal() {
   const [isOpen, setIsOpen] = useState(false);
@@ -47,9 +48,18 @@ export default function CommunityModal() {
           </svg>
         </button>
 
-        {/* Header Icon */}
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-brand-600 to-brand-500 flex items-center justify-center text-3xl mx-auto mb-4 shadow-lg shadow-brand-500/30">
-          🎬
+        {/* Header Logo */}
+        <div className="flex items-center justify-center mx-auto mb-4">
+          <div className="px-5 py-2.5 rounded-2xl bg-dark-800/80 border border-brand-500/30 shadow-lg shadow-brand-500/20 backdrop-blur-md">
+            <Image
+              src="/logo.png"
+              alt="DubLK Logo"
+              width={150}
+              height={45}
+              className="h-10 sm:h-12 w-auto object-contain"
+              unoptimized
+            />
+          </div>
         </div>
 
         {/* Title & Description */}
