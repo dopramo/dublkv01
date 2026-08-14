@@ -187,9 +187,9 @@ export default function TVSeriesDetailClient({ series, relatedSeries, credits }:
                 {/* ── Play (Without Ads) ── */}
                 <button
                   onClick={handlePlayVip}
-                  className="relative flex-1 sm:flex-initial inline-flex items-center justify-center gap-2.5 min-w-[130px] sm:min-w-[175px] px-5 sm:px-7 py-3.5 sm:py-4 rounded-xl font-bold text-white transition-all duration-300 bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 shadow-[0_4px_20px_rgba(217,4,201,0.35)] hover:shadow-[0_6px_25px_rgba(217,4,201,0.5)] hover:-translate-y-0.5 active:scale-[0.97] group"
+                  className="relative flex-1 sm:flex-initial inline-flex items-center justify-center gap-2.5 min-w-[130px] sm:min-w-[175px] px-5 sm:px-7 py-3.5 sm:py-4 rounded-xl font-bold text-white transition-all duration-300 bg-gradient-to-r from-[#9b5ff7] to-[#5dcdfb] hover:from-[#8642f4] hover:to-[#38bdf8] shadow-[0_4px_20px_rgba(155,95,247,0.35)] hover:shadow-[0_6px_25px_rgba(155,95,247,0.5)] hover:-translate-y-0.5 active:scale-[0.97] group"
                 >
-                  <span className="absolute -top-2.5 right-2.5 px-2 py-0.5 rounded-md text-[8px] sm:text-[9px] font-extrabold tracking-wider uppercase bg-purple-950/95 border border-fuchsia-400/40 text-fuchsia-200 shadow-sm backdrop-blur-md">
+                  <span className="absolute -top-2.5 right-2.5 px-2 py-0.5 rounded-md text-[8px] sm:text-[9px] font-extrabold tracking-wider uppercase bg-dark-950/95 border border-[#5dcdfb]/40 text-[#5dcdfb] shadow-sm backdrop-blur-md">
                     {hasVipAccess ? 'VIP UNLOCKED' : 'WITHOUT ADS'}
                   </span>
                   <svg className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0 drop-shadow transition-transform duration-300 group-hover:scale-110" fill="currentColor" viewBox="0 0 20 20">

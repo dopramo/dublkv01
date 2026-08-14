@@ -396,7 +396,7 @@ export default function WatchTVClient({ series, initialMode = 'free' }: WatchTVC
           ) : (
             <button
               onClick={handleUpgradeVip}
-              className="flex-shrink-0 px-6 py-3.5 rounded-xl font-bold text-white text-xs sm:text-sm bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 shadow-lg shadow-fuchsia-500/25 transition-all duration-200 hover:scale-105 active:scale-95 flex items-center gap-2 whitespace-nowrap"
+              className="flex-shrink-0 px-6 py-3.5 rounded-xl font-bold text-white text-xs sm:text-sm bg-gradient-to-r from-[#9b5ff7] to-[#5dcdfb] hover:from-[#8642f4] hover:to-[#38bdf8] shadow-lg shadow-[#9b5ff7]/25 transition-all duration-200 hover:scale-105 active:scale-95 flex items-center gap-2 whitespace-nowrap"
             >
               <span className="text-base">👑</span>
               <span>Upgrade to VIP</span>
